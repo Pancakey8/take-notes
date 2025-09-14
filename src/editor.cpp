@@ -162,6 +162,42 @@ void Editor::event(const SDL_Event &event) {
         cursor += clip_len;
       }
       break;
+    case SDLK_C:
+      if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
+        if (mode == EditorMode::Select) {
+          std::string select{};
+          if (select_anchor > cursor) {
+            select = text.substr(cursor, select_anchor - cursor);
+          } else {
+            select = text.substr(select_anchor, cursor - select_anchor);
+          }
+          SDL_SetClipboardText(select.c_str());
+          cursor = select_anchor;
+          mode = EditorMode::Insert;
+        }
+      }
+      break;
+    case SDLK_X:
+      if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
+        if (mode == EditorMode::Select) {
+          std::string select{};
+          if (select_anchor > cursor) {
+            select = text.substr(cursor, select_anchor - cursor);
+          } else {
+            select = text.substr(select_anchor, cursor - select_anchor);
+          }
+          SDL_SetClipboardText(select.c_str());
+          select_erase_exit();
+        }
+      }
+      break;
+    case SDLK_A:
+      if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
+        mode = EditorMode::Select;
+        select_anchor = 0;
+        cursor = text.size();
+      }
+      break;
     default:
       break;
     }
@@ -261,9 +297,20 @@ void Editor::render() {
         draw_list->AddText(
             font, font_size, ImVec2(content_x, content_y + row * font_size),
             IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), line.c_str(), nullptr);
+        draw_list->AddText(font, font_size,
+                           ImVec2(content_w, content_y + row * font_size),
+                           IM_COL32(0xFF, 0xFF, 0xFF, 0x7F), "...", nullptr);
         ++row;
         line.clear();
         line += ch;
+        // Also append selection box
+        if (mode == EditorMode::Select) {
+          select_lines.emplace_back(select_now);
+          select_now.first.x = content_x;
+          select_now.first.y = content_y + row * font_size;
+          select_now.second.x = select_now.first.x;
+          select_now.second.y = select_now.first.y + font_size;
+        }
       }
     }
 
