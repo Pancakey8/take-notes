@@ -143,6 +143,88 @@ void Editor::event(const SDL_Event &event) {
       }
       cursor += len;
     } break;
+    case SDLK_UP: {
+      if (cursor == 0)
+        break;
+
+      size_t cur_line_start = text.rfind('\n', cursor - 1);
+      if (cur_line_start == text.npos) {
+        cursor = 0;
+        break;
+      }
+      cur_line_start = cur_line_start + 1;
+
+      size_t col_bytes = cursor;
+      size_t col = 0;
+      for (size_t i = cur_line_start; i < col_bytes;
+           i += utf8_next_len(text, i))
+        ++col;
+
+      size_t prev_line_end = (cur_line_start == 0) ? 0 : cur_line_start - 1;
+      if (prev_line_end == 0 && text.size() > 0 && text[0] == '\n') {
+      }
+      size_t prev_line_start =
+          (prev_line_end == 0) ? 0 : text.rfind('\n', prev_line_end - 1);
+      prev_line_start =
+          (prev_line_start == text.npos) ? 0 : prev_line_start + 1;
+
+      size_t prev_line_len = 0;
+      for (size_t i = prev_line_start; i < prev_line_end;
+           i += utf8_next_len(text, i))
+        ++prev_line_len;
+
+      size_t target_col = std::min(col, prev_line_len);
+
+      size_t byte_pos = prev_line_start;
+      for (size_t k = 0; k < target_col; ++k)
+        byte_pos += utf8_next_len(text, byte_pos);
+
+      cursor = byte_pos;
+    } break;
+
+    case SDLK_DOWN: {
+      if (cursor >= text.size())
+        break;
+
+      size_t cur_line_start;
+      if (cursor > 0) {
+        cur_line_start = text.rfind('\n', cursor - 1);
+        cur_line_start = (cur_line_start == text.npos) ? 0 : cur_line_start + 1;
+      } else {
+        cur_line_start = 0;
+      }
+
+      size_t col = 0;
+      for (size_t i = cur_line_start; i < cursor; i += utf8_next_len(text, i))
+        ++col;
+
+      size_t cur_line_end = text.find('\n', cursor);
+      if (cur_line_end == text.npos)
+        cur_line_end = text.size();
+
+      if (cur_line_end >= text.size()) {
+        cursor = text.size();
+        break;
+      }
+
+      size_t next_line_start = cur_line_end + 1;
+      size_t next_line_end = text.find('\n', next_line_start);
+      if (next_line_end == text.npos)
+        next_line_end = text.size();
+
+      size_t next_line_len = 0;
+      for (size_t i = next_line_start; i < next_line_end;
+           i += utf8_next_len(text, i))
+        ++next_line_len;
+
+      size_t target_col = std::min(col, next_line_len);
+
+      size_t byte_pos = next_line_start;
+      for (size_t k = 0; k < target_col; ++k)
+        byte_pos += utf8_next_len(text, byte_pos);
+
+      cursor = byte_pos;
+    } break;
     case SDLK_TAB: {
       if (mode == EditorMode::Select) {
         select_erase_exit();
