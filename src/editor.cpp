@@ -2,6 +2,7 @@
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <imgui.h>
 #include <iostream>
+#include <vector>
 
 // TODO: Swap for proper utf8
 size_t utf8_next_len(const std::string &s, size_t pos) {
@@ -32,9 +33,22 @@ size_t utf8_prev_len(const std::string &s, size_t pos) {
   return pos;
 }
 
+void Editor::select_erase_exit() {
+  if (select_anchor > cursor) {
+    text.erase(cursor, select_anchor - cursor);
+  } else {
+    text.erase(select_anchor, cursor - select_anchor);
+    cursor = select_anchor;
+  }
+  mode = EditorMode::Insert;
+}
+
 void Editor::event(const SDL_Event &event) {
   switch (event.type) {
   case SDL_EVENT_TEXT_INPUT: {
+    if (mode == EditorMode::Select) {
+      select_erase_exit();
+    }
     size_t inp_len = strlen(event.text.text);
     text.insert(cursor, event.text.text, inp_len);
     cursor += inp_len;
@@ -42,6 +56,10 @@ void Editor::event(const SDL_Event &event) {
   case SDL_EVENT_KEY_DOWN: {
     switch (event.key.key) {
     case SDLK_BACKSPACE: {
+      if (mode == EditorMode::Select) {
+        select_erase_exit();
+        break;
+      }
       if (cursor == 0)
         break;
       size_t len;
@@ -62,19 +80,32 @@ void Editor::event(const SDL_Event &event) {
       text.erase(cursor, len);
     } break;
     case SDLK_RETURN: {
+      if (mode == EditorMode::Select) {
+        select_erase_exit();
+      }
       text.insert(cursor++, "\n", 1);
     } break;
     case SDLK_LEFT: {
       if (cursor == 0)
         break;
+      if (event.key.mod & SDL_KMOD_LSHIFT || event.key.mod & SDL_KMOD_RSHIFT) {
+        if (mode == EditorMode::Insert) {
+          mode = EditorMode::Select;
+          select_anchor = cursor;
+        }
+      } else {
+        mode = EditorMode::Insert;
+      }
       size_t len;
       if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
         long i;
         for (i = cursor - 1; i > 0;) {
           size_t l = utf8_prev_len(text, i);
           std::string_view str{text.substr(i - l, l)};
+          if (str == "\n" && static_cast<size_t>(i) != cursor)
+            break;
           i -= l;
-          if (str == " ")
+          if (str == " " || str == "\n")
             break;
         }
         len = cursor - i;
@@ -86,12 +117,22 @@ void Editor::event(const SDL_Event &event) {
     case SDLK_RIGHT: {
       if (cursor >= text.size())
         break;
+      if (event.key.mod & SDL_KMOD_LSHIFT || event.key.mod & SDL_KMOD_RSHIFT) {
+        if (mode == EditorMode::Insert) {
+          mode = EditorMode::Select;
+          select_anchor = cursor;
+        }
+      } else {
+        mode = EditorMode::Insert;
+      }
       size_t len;
       if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
         long i;
         for (i = cursor; static_cast<size_t>(i) < text.size();) {
           size_t l = utf8_next_len(text, i);
           std::string_view str{text.substr(i, l)};
+          if (str == "\n" && static_cast<size_t>(i) != cursor)
+            break;
           i += l;
           if (str == " ")
             break;
@@ -102,18 +143,19 @@ void Editor::event(const SDL_Event &event) {
       }
       cursor += len;
     } break;
-    case SDLK_UP: {
-      if (cursor >= text.size())
-        break;
-      size_t len = utf8_next_len(text, cursor);
-      cursor += len;
-    } break;
     case SDLK_TAB: {
+      if (mode == EditorMode::Select) {
+        select_erase_exit();
+      }
       text.insert(cursor, "  ", 2);
       cursor += 2;
     } break;
     case SDLK_V:
       if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
+        if (mode == EditorMode::Select) {
+          select_erase_exit();
+        }
+
         char *clip = SDL_GetClipboardText();
         size_t clip_len = strlen(clip);
         text.insert(cursor, clip, clip_len);
@@ -150,10 +192,39 @@ void Editor::render() {
   std::string line{};
   size_t row{0};
 
+  using Rect = std::pair<ImVec2, ImVec2>;
+  std::vector<Rect> select_lines{};
+  Rect select_now{};
+
   // TODO: Disgusting, but so many cases??
   // TODO: Also use utf8 methods
   for (size_t i = 0; i < text.size(); ++i) {
     char &ch = text.at(i);
+
+    bool in_selection{cursor > select_anchor
+                          ? (select_anchor < i && i < cursor)
+                          : (cursor < i && i < select_anchor)};
+    bool in_begin{cursor > select_anchor ? (i == select_anchor)
+                                         : (i == cursor)};
+    bool in_end{cursor > select_anchor ? (i == cursor) : (i == select_anchor)};
+
+    // If we are at the start of the selection, then set start and end points.
+    if (mode == EditorMode::Select && in_begin) {
+      ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w, content_w + 10,
+                                           line.c_str());
+      select_now.first.x = content_x + line_sz.x;
+      select_now.first.y = content_y + row * font_size;
+      select_now.second.x = select_now.first.x;
+      select_now.second.y = select_now.first.y + font_size;
+    }
+
+    // While within the selection, update just the end point.
+    if (mode == EditorMode::Select && (in_end || in_selection)) {
+      ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w, content_w + 10,
+                                           line.c_str());
+      select_now.second.x = content_x + line_sz.x;
+      select_now.second.y = select_now.first.y + font_size;
+    }
 
     if (i == cursor) { // If at cursor, save the position
       ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w, content_w + 10,
@@ -168,6 +239,14 @@ void Editor::render() {
           IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), line.c_str(), nullptr);
       line.clear();
       ++row;
+      // Append current selected area if new line
+      if (mode == EditorMode::Select) {
+        select_lines.emplace_back(select_now);
+        select_now.first.x = content_x;
+        select_now.first.y = content_y + row * font_size;
+        select_now.second.x = select_now.first.x;
+        select_now.second.y = select_now.first.y + font_size;
+      }
     } else {
       // Append to line...(1)
       line += ch;
@@ -196,6 +275,17 @@ void Editor::render() {
       cy = content_y + row * font_size;
     }
 
+    // If selecting and either end is at the end, then ensure final character is
+    // included
+    if (mode == EditorMode::Select)
+      if ((cursor == text.size() || select_anchor == text.size()) &&
+          i == text.size() - 1) {
+        ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w,
+                                             content_w + 10, line.c_str());
+        select_now.second.x = content_x + line_sz.x;
+        select_now.second.y = select_now.first.y + font_size;
+      }
+
     // And if no natural newline, update the final line.
     if (ch != '\n' && i == text.size() - 1) {
       draw_list->AddText(
@@ -203,9 +293,19 @@ void Editor::render() {
           IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), line.c_str(), nullptr);
       line.clear();
       ++row;
+      // And also append the final line if selection
+      if (mode == EditorMode::Select) {
+        select_lines.emplace_back(select_now);
+      }
     }
   }
 
   draw_list->AddRectFilled({cx, cy}, {cx + 5, cy + font_size},
                            IM_COL32(0xFF, 0xFF, 0xFF, 0xFF));
+  if (mode == EditorMode::Select) {
+    for (auto &line : select_lines) {
+      draw_list->AddRectFilled(line.first, line.second,
+                               IM_COL32(0xFF, 0xFF, 0, 0x7F));
+    }
+  }
 }

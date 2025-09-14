@@ -3,9 +3,15 @@
 #include <imgui.h>
 #include <string>
 
+enum class EditorMode { Insert, Select };
+
 class Editor {
   std::string text{};
   size_t cursor{0};
+  EditorMode mode{EditorMode::Insert};
+  size_t select_anchor{0};
+
+  void select_erase_exit();
 
 public:
   float width{0.8f}, height{1.0f}, font_size{18.0f};
