@@ -34,13 +34,17 @@ int main() {
   cfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_Monochrome |
                         ImGuiFreeTypeBuilderFlags_MonoHinting;
   // TODO: No hardcoded font
-  ImFont *editor_font = io.Fonts->AddFontFromFileTTF(
-      "/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Regular.ttf", 18.0f, &cfg);
+  float font_size{20.0f};
+  ImFont *plain_font = io.Fonts->AddFontFromFileTTF(
+      "/usr/share/fonts/noto/NotoSansMono-Medium.ttf", font_size, &cfg);
+  ImFont *bold_font = io.Fonts->AddFontFromFileTTF(
+      "/usr/share/fonts/noto/NotoSansMono-ExtraBold.ttf", font_size, &cfg);
 
   ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
   ImGui_ImplSDLRenderer3_Init(renderer);
 
-  Editor editor{window, renderer, editor_font};
+  Editor editor{window, renderer, plain_font, bold_font};
+  editor.font_size = font_size;
   // TODO: No hardcoded path
   FileExplorer explorer{std::filesystem::current_path().parent_path()};
   explorer.on_open([&editor](auto file) { editor.set_text(std::move(file)); });

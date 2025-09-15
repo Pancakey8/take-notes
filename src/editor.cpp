@@ -1,7 +1,6 @@
 #include "editor.hpp"
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <imgui.h>
-#include <iostream>
 #include <unordered_set>
 #include <vector>
 
@@ -53,25 +52,6 @@ ImVec4 Editor::get_bg_rect() {
 }
 
 void Editor::event(const SDL_Event &event) {
-  ImGuiIO io = ImGui::GetIO();
-  if (io.WantCaptureKeyboard || io.WantTextInput) {
-    is_focused = false;
-    return;
-  }
-  if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-    if (io.WantCaptureMouse) {
-      is_focused = false;
-      return;
-    }
-    auto [x, y, w, h] = get_bg_rect();
-    float mx = event.button.x, my = event.button.y;
-    if (x <= mx && mx <= x + w && y <= my && my <= y + h) {
-      is_focused = true;
-    } else {
-      is_focused = false;
-    }
-  }
-
   if (!is_focused)
     return;
 
@@ -88,6 +68,7 @@ void Editor::event(const SDL_Event &event) {
     size_t inp_len = strlen(event.text.text);
     text.insert(cursor, event.text.text, inp_len);
     cursor += inp_len;
+    reparse();
   } break;
   case SDL_EVENT_KEY_DOWN: {
     switch (event.key.key) {
@@ -319,6 +300,7 @@ void Editor::event(const SDL_Event &event) {
     default:
       break;
     }
+    reparse();
   } break;
   default:
     break;
@@ -326,9 +308,17 @@ void Editor::event(const SDL_Event &event) {
 }
 
 void Editor::render() {
-  ImDrawList *draw_list = ImGui::GetBackgroundDrawList();
-
   auto [x, y, w, h] = get_bg_rect();
+  ImGui::SetNextWindowPos({x, y});
+  ImGui::SetNextWindowSize({w, h});
+  ImGui::Begin("Editor", nullptr,
+               ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
+                   ImGuiWindowFlags_NoScrollWithMouse);
+
+  is_focused = ImGui::IsWindowFocused();
+
+  ImDrawList *draw_list = ImGui::GetWindowDrawList();
+
   draw_list->AddRectFilled({x, y}, {x + w, y + h},
                            IM_COL32(0x20, 0x20, 0x20, 0xFF));
 
@@ -339,145 +329,121 @@ void Editor::render() {
   float content_h = h - 2.0f * padding;
 
   float cx{content_x}, cy{content_y};
-  std::string line{};
-  size_t row{0};
+  size_t idx{0};
 
-  using Rect = std::pair<ImVec2, ImVec2>;
-  std::vector<Rect> select_lines{};
-  Rect select_now{};
-
-  // TODO: Disgusting, but so many cases??
-  // TODO: Also use utf8 methods
-  for (size_t i = 0; i < text.size(); ++i) {
-    char &ch = text.at(i);
-
-    bool in_selection{cursor > select_anchor
-                          ? (select_anchor < i && i < cursor)
-                          : (cursor < i && i < select_anchor)};
-    bool in_begin{cursor > select_anchor ? (i == select_anchor)
-                                         : (i == cursor)};
-    bool in_end{cursor > select_anchor ? (i == cursor) : (i == select_anchor)};
-
-    // If we are at the start of the selection, then set start and end points.
-    if (mode == EditorMode::Select && in_begin) {
-      ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w, content_w + 10,
-                                           line.c_str());
-      select_now.first.x = content_x + line_sz.x;
-      select_now.first.y = content_y + row * font_size;
-      select_now.second.x = select_now.first.x;
-      select_now.second.y = select_now.first.y + font_size;
-    }
-
-    // While within the selection, update just the end point.
-    if (mode == EditorMode::Select && (in_end || in_selection)) {
-      ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w, content_w + 10,
-                                           line.c_str());
-      select_now.second.x = content_x + line_sz.x;
-      select_now.second.y = select_now.first.y + font_size;
-    }
-
-    if (i == cursor) { // If at cursor, save the position
-      ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w, content_w + 10,
-                                           line.c_str());
-      cx = content_x + line_sz.x;
-      cy = content_y + row * font_size;
-    }
-
-    if (ch == '\n') { // Natural newline, update scene
-      draw_list->AddText(
-          font, font_size, ImVec2(content_x, content_y + row * font_size),
-          IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), line.c_str(), nullptr);
-      line.clear();
-      ++row;
-      // Append current selected area if new line
-      if (mode == EditorMode::Select) {
-        select_lines.emplace_back(select_now);
-        select_now.first.x = content_x;
-        select_now.first.y = content_y + row * font_size;
-        select_now.second.x = select_now.first.x;
-        select_now.second.y = select_now.first.y + font_size;
+  auto render = [&](ImFont *font, const std::string &text, int fmt) {
+    size_t vtx_start = draw_list->VtxBuffer.Size;
+    draw_list->AddText(font, font_size, {cx, cy},
+                       IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), text.c_str());
+    size_t vtx_end = draw_list->VtxBuffer.Size;
+    if (fmt & Format_Italic) {
+      for (size_t i = vtx_start; i < vtx_end; ++i) {
+        ImDrawVert &vtx = draw_list->VtxBuffer[i];
+        float dy = vtx.pos.y - cy;
+        vtx.pos.x -= 0.20f * dy;
       }
-    } else {
-      // Append to line...(1)
-      line += ch;
-      ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w,
-                                           content_w + 10 /*Impossible value */
-                                           ,
-                                           line.c_str());
+    }
+  };
 
-      //(1)...but if overflow, then act as if newline.
-      if (line_sz.x >= content_w - font_size) {
-        line.pop_back();
-        draw_list->AddText(
-            font, font_size, ImVec2(content_x, content_y + row * font_size),
-            IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), line.c_str(), nullptr);
-        draw_list->AddText(font, font_size,
-                           ImVec2(content_w, content_y + row * font_size),
-                           IM_COL32(0xFF, 0xFF, 0xFF, 0x7F), "...", nullptr);
-        ++row;
-        line.clear();
-        line += ch;
-        // Also append selection box
-        if (mode == EditorMode::Select) {
-          select_lines.emplace_back(select_now);
-          select_now.first.x = content_x;
-          select_now.first.y = content_y + row * font_size;
-          select_now.second.x = select_now.first.x;
-          select_now.second.y = select_now.first.y + font_size;
+  auto draw_cursor = [&](float x, float y, float height) {
+    if (!is_focused)
+      return;
+    draw_list->AddRectFilled({x, y}, {x + 3.0f, y + height},
+                             IM_COL32(0xFF, 0xFF, 0xFF, 0xAF));
+  };
+
+  auto draw_selection = [&](float x, float y, float w, float h) {
+    draw_list->AddRectFilled({x, y}, {x + w, y + h},
+                             IM_COL32(0xFF, 0xFF, 0, 0x7F));
+  };
+
+  size_t sel_start = std::min(cursor, select_anchor);
+  size_t sel_end = std::max(cursor, select_anchor);
+
+  for (auto &token : format) {
+    if (std::holds_alternative<NewLine>(token)) {
+      if (idx == cursor) {
+        draw_cursor(cx, cy, font_size);
+      }
+      cy += font_size;
+      if (cy >= content_y + content_h - font_size)
+        break;
+      cx = content_x;
+      ++idx;
+      continue;
+    }
+
+    if (std::holds_alternative<FormattedString>(token)) {
+      auto fmt = std::get<FormattedString>(token);
+      ImFont *font = (fmt.format & Format_Bold) ? bold : plain;
+
+      std::string text = fmt.value;
+      size_t pos = 0;
+
+      while (pos < text.size()) {
+        size_t next_space = text.find(' ', pos);
+        if (next_space == std::string::npos)
+          next_space = text.size();
+
+        std::string word = text.substr(pos, next_space - pos);
+
+        if (next_space < text.size())
+          word += ' ';
+
+        float word_width =
+            font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, word.c_str()).x;
+
+        if (cx + word_width > content_x + content_w) {
+          cx = content_x;
+          cy += font_size;
+          if (cy >= content_y + content_h - font_size)
+            break;
         }
+        for (size_t i = 0; i <= word.size(); ++i) {
+          if (idx == cursor) {
+            std::string sub = word.substr(0, i);
+            float cursor_x =
+                cx +
+                font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, sub.c_str()).x;
+            draw_cursor(cursor_x, cy, font_size);
+          }
+          if (mode == EditorMode::Select && idx >= sel_start && idx < sel_end) {
+            float sub_width = font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX,
+                                                  word.substr(0, i + 1).c_str())
+                                  .x;
+            float prev_width = font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX,
+                                                   word.substr(0, i).c_str())
+                                   .x;
+            draw_selection(cx + prev_width, cy, sub_width - prev_width,
+                           font_size);
+          }
+          if (i != word.size())
+            ++idx;
+        }
+
+        render(font, word, fmt.format);
+        cx += word_width;
+
+        pos = next_space + 1;
       }
-    }
-
-    // But if cursor is appending at the end, special case
-    if (cursor == text.size() && i == text.size() - 1) {
-      ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w, content_w + 10,
-                                           line.c_str());
-      cx = content_x + line_sz.x;
-      cy = content_y + row * font_size;
-    }
-
-    // If selecting and either end is at the end, then ensure final character is
-    // included
-    if (mode == EditorMode::Select)
-      if ((cursor == text.size() || select_anchor == text.size()) &&
-          i == text.size() - 1) {
-        ImVec2 line_sz = font->CalcTextSizeA(font_size, content_w,
-                                             content_w + 10, line.c_str());
-        select_now.second.x = content_x + line_sz.x;
-        select_now.second.y = select_now.first.y + font_size;
-      }
-
-    // And if no natural newline, update the final line.
-    if (ch != '\n' && i == text.size() - 1) {
-      draw_list->AddText(
-          font, font_size, ImVec2(content_x, content_y + row * font_size),
-          IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), line.c_str(), nullptr);
-      line.clear();
-      ++row;
-      // And also append the final line if selection
-      if (mode == EditorMode::Select) {
-        select_lines.emplace_back(select_now);
-      }
-    }
-
-    if (row * font_size >= content_h) {
-      break;
+      continue;
     }
   }
 
-  if (is_focused) {
-    draw_list->AddRectFilled({cx, cy}, {cx + 5, cy + font_size},
-                             IM_COL32(0xFF, 0xFF, 0xFF, 0xFF));
+  if (idx == cursor) {
+    draw_cursor(cx, cy, font_size);
   }
 
-  if (mode == EditorMode::Select) {
-    for (auto &line : select_lines) {
-      ImGuiCol col = IM_COL32(0xFF, 0xFF, 0, 0x7F);
-      if (!is_focused)
-        col = IM_COL32(0xAF, 0xAF, 0, 0x7F);
-      draw_list->AddRectFilled(line.first, line.second, col);
-    }
-  }
+  ImGui::End();
 }
 
-void Editor::set_text(std::string &&text) { this->text = std::move(text); }
+void Editor::reparse() {
+  Parser parser{text};
+  parser.parse_all();
+  format = std::move(parser.tokens);
+}
+
+void Editor::set_text(std::string &&text) {
+  this->text = std::move(text);
+  reparse();
+}
