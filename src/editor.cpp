@@ -164,6 +164,15 @@ void Editor::event(const SDL_Event &event) {
       if (cursor == 0)
         break;
 
+      if (event.key.mod & SDL_KMOD_LSHIFT || event.key.mod & SDL_KMOD_RSHIFT) {
+        if (mode == EditorMode::Insert) {
+          mode = EditorMode::Select;
+          select_anchor = cursor;
+        }
+      } else {
+        mode = EditorMode::Insert;
+      }
+
       size_t cur_line_start = text.rfind('\n', cursor - 1);
       if (cur_line_start == text.npos) {
         cursor = 0;
@@ -202,6 +211,15 @@ void Editor::event(const SDL_Event &event) {
     case SDLK_DOWN: {
       if (cursor >= text.size())
         break;
+
+      if (event.key.mod & SDL_KMOD_LSHIFT || event.key.mod & SDL_KMOD_RSHIFT) {
+        if (mode == EditorMode::Insert) {
+          mode = EditorMode::Select;
+          select_anchor = cursor;
+        }
+      } else {
+        mode = EditorMode::Insert;
+      }
 
       size_t cur_line_start;
       if (cursor > 0) {
@@ -386,7 +404,6 @@ void Editor::render() {
           next_space = text.size();
 
         std::string word = text.substr(pos, next_space - pos);
-
         if (next_space < text.size())
           word += ' ';
 
@@ -399,33 +416,40 @@ void Editor::render() {
           if (cy >= content_y + content_h - font_size)
             break;
         }
-        for (size_t i = 0; i <= word.size(); ++i) {
+
+        size_t char_pos = 0;
+        while (char_pos < word.size()) {
+          size_t len = utf8_next_len(word, char_pos);
+
           if (idx == cursor) {
-            std::string sub = word.substr(0, i);
+            std::string sub = word.substr(0, char_pos);
             float cursor_x =
                 cx +
                 font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, sub.c_str()).x;
             draw_cursor(cursor_x, cy, font_size);
           }
+
           if (mode == EditorMode::Select && idx >= sel_start && idx < sel_end) {
-            float sub_width = font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX,
-                                                  word.substr(0, i + 1).c_str())
-                                  .x;
-            float prev_width = font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX,
-                                                   word.substr(0, i).c_str())
-                                   .x;
+            std::string sub = word.substr(0, char_pos + len);
+            std::string prev = word.substr(0, char_pos);
+            float sub_width =
+                font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, sub.c_str()).x;
+            float prev_width =
+                font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, prev.c_str())
+                    .x;
             draw_selection(cx + prev_width, cy, sub_width - prev_width,
                            font_size);
           }
-          if (i != word.size())
-            ++idx;
+
+          idx += len;
+          char_pos += len;
         }
 
         render(font, word, fmt.format);
         cx += word_width;
-
         pos = next_space + 1;
       }
+
       continue;
     }
   }
