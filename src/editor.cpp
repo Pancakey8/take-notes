@@ -2,6 +2,7 @@
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <imgui.h>
 #include <iostream>
+#include <unordered_set>
 #include <vector>
 
 // TODO: Swap for proper utf8
@@ -43,7 +44,42 @@ void Editor::select_erase_exit() {
   mode = EditorMode::Insert;
 }
 
+ImVec4 Editor::get_bg_rect() {
+  int winw, winh;
+  SDL_GetWindowSize(window, &winw, &winh);
+  float w = winw * width, h = winh * height;
+  float x = 0, y = 0.5f * (winh - h);
+  return {x, y, w, h};
+}
+
 void Editor::event(const SDL_Event &event) {
+  ImGuiIO io = ImGui::GetIO();
+  if (io.WantCaptureKeyboard || io.WantTextInput) {
+    is_focused = false;
+    return;
+  }
+  if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+    if (io.WantCaptureMouse) {
+      is_focused = false;
+      return;
+    }
+    auto [x, y, w, h] = get_bg_rect();
+    float mx = event.button.x, my = event.button.y;
+    if (x <= mx && mx <= x + w && y <= my && my <= y + h) {
+      is_focused = true;
+    } else {
+      is_focused = false;
+    }
+  }
+
+  if (!is_focused)
+    return;
+
+  static const std::unordered_set<std::string> ctrl_stop_at{
+      "\n", " ", "\t", "(", ")", "{", "}",  "[",  "]",  "<", ">",
+      ",",  ".", ";",  ":", "!", "?", "\"", "\'", "-",  "_", "+",
+      "=",  "*", "/",  "%", "&", "|", "^",  "~",  "\\", "`"};
+
   switch (event.type) {
   case SDL_EVENT_TEXT_INPUT: {
     if (mode == EditorMode::Select) {
@@ -67,9 +103,9 @@ void Editor::event(const SDL_Event &event) {
         long i;
         for (i = cursor - 1; i > 0;) {
           size_t l = utf8_prev_len(text, i);
-          std::string_view str{text.substr(i - l, l)};
+          std::string str{text.substr(i - l, l)};
           i -= l;
-          if (str == " ")
+          if (ctrl_stop_at.contains(str))
             break;
         }
         len = cursor - i;
@@ -101,11 +137,11 @@ void Editor::event(const SDL_Event &event) {
         long i;
         for (i = cursor - 1; i > 0;) {
           size_t l = utf8_prev_len(text, i);
-          std::string_view str{text.substr(i - l, l)};
+          std::string str{text.substr(i - l, l)};
           if (str == "\n" && static_cast<size_t>(i) != cursor)
             break;
           i -= l;
-          if (str == " " || str == "\n")
+          if (ctrl_stop_at.contains(str))
             break;
         }
         len = cursor - i;
@@ -130,11 +166,11 @@ void Editor::event(const SDL_Event &event) {
         long i;
         for (i = cursor; static_cast<size_t>(i) < text.size();) {
           size_t l = utf8_next_len(text, i);
-          std::string_view str{text.substr(i, l)};
+          std::string str{text.substr(i, l)};
           if (str == "\n" && static_cast<size_t>(i) != cursor)
             break;
           i += l;
-          if (str == " ")
+          if (ctrl_stop_at.contains(str))
             break;
         }
         len = i - cursor;
@@ -289,22 +325,18 @@ void Editor::event(const SDL_Event &event) {
   }
 }
 
-void Editor::update() { SDL_StartTextInput(window); }
-
 void Editor::render() {
-  int winw, winh;
-  SDL_GetWindowSize(window, &winw, &winh);
-  SDL_SetRenderDrawColor(renderer, 0x20, 0x20, 0x20, 0xFF);
-  float w = winw * width, h = winh * height;
-  float x = 0, y = 0.5f * (winh - h);
-  SDL_FRect rect{x, y, w, h};
-  SDL_RenderFillRect(renderer, &rect);
+  ImDrawList *draw_list = ImGui::GetBackgroundDrawList();
 
-  ImDrawList *draw_list = ImGui::GetForegroundDrawList();
+  auto [x, y, w, h] = get_bg_rect();
+  draw_list->AddRectFilled({x, y}, {x + w, y + h},
+                           IM_COL32(0x20, 0x20, 0x20, 0xFF));
+
   float padding = 20.0f;
   float content_x = x + padding;
   float content_y = y + padding;
   float content_w = w - 2.0f * padding;
+  float content_h = h - 2.0f * padding;
 
   float cx{content_x}, cy{content_y};
   std::string line{};
@@ -427,14 +459,25 @@ void Editor::render() {
         select_lines.emplace_back(select_now);
       }
     }
+
+    if (row * font_size >= content_h) {
+      break;
+    }
   }
 
-  draw_list->AddRectFilled({cx, cy}, {cx + 5, cy + font_size},
-                           IM_COL32(0xFF, 0xFF, 0xFF, 0xFF));
+  if (is_focused) {
+    draw_list->AddRectFilled({cx, cy}, {cx + 5, cy + font_size},
+                             IM_COL32(0xFF, 0xFF, 0xFF, 0xFF));
+  }
+
   if (mode == EditorMode::Select) {
     for (auto &line : select_lines) {
-      draw_list->AddRectFilled(line.first, line.second,
-                               IM_COL32(0xFF, 0xFF, 0, 0x7F));
+      ImGuiCol col = IM_COL32(0xFF, 0xFF, 0, 0x7F);
+      if (!is_focused)
+        col = IM_COL32(0xAF, 0xAF, 0, 0x7F);
+      draw_list->AddRectFilled(line.first, line.second, col);
     }
   }
 }
+
+void Editor::set_text(std::string &&text) { this->text = std::move(text); }

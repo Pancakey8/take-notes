@@ -10,6 +10,7 @@ class Editor {
   size_t cursor{0};
   EditorMode mode{EditorMode::Insert};
   size_t select_anchor{0};
+  bool is_focused{true};
 
   void select_erase_exit();
 
@@ -21,6 +22,8 @@ public:
   Editor(SDL_Window *window, SDL_Renderer *renderer, ImFont *font)
       : font(font), window(window), renderer(renderer) {}
   void event(const SDL_Event &event);
-  void update();
   void render();
+  void set_text(std::string &&text);
+
+  ImVec4 get_bg_rect();
 };

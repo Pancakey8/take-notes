@@ -1,4 +1,5 @@
 #include "editor.hpp"
+#include "file_exp.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 #include <backends/imgui_impl_sdl3.h>
@@ -16,6 +17,8 @@ int main() {
                                    SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED,
                                    &window, &renderer))
     return 1;
+
+  SDL_StartTextInput(window);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -38,6 +41,9 @@ int main() {
   ImGui_ImplSDLRenderer3_Init(renderer);
 
   Editor editor{window, renderer, editor_font};
+  // TODO: No hardcoded path
+  FileExplorer explorer{std::filesystem::current_path().parent_path()};
+  explorer.on_open([&editor](auto file) { editor.set_text(std::move(file)); });
 
   bool is_running{true};
   while (is_running) {
@@ -50,7 +56,13 @@ int main() {
       }
     }
 
-    editor.update();
+    auto [ex, ey, ew, eh] = editor.get_bg_rect();
+    int winw, winh;
+    SDL_GetWindowSize(window, &winw, &winh);
+    explorer.x = ex + ew;
+    explorer.y = 0;
+    explorer.h = eh;
+    explorer.w = winw - ew;
 
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -59,6 +71,7 @@ int main() {
     SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
     SDL_RenderClear(renderer);
     editor.render();
+    explorer.render();
     ImGui::Render();
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);
