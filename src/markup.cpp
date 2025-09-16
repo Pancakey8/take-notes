@@ -40,6 +40,10 @@ std::vector<Token> Parser::parse_wrapped(std::string which, Format format) {
     }
     std::vector<Token> toks = parse();
     for (auto &tok : toks) {
+      if (std::holds_alternative<NewLine>(tok)) {
+        total.emplace_back(tok);
+        continue;
+      }
       FormattedString fmt = std::get<FormattedString>(tok);
       fmt.format |= format;
       total.emplace_back(fmt);
@@ -72,6 +76,10 @@ std::vector<Token> Parser::parse_head() {
     }
     std::vector<Token> toks = parse();
     for (auto &tok : toks) {
+      if (std::holds_alternative<NewLine>(tok)) {
+        total.emplace_back(tok);
+        continue;
+      }
       FormattedString fmt = std::get<FormattedString>(tok);
       fmt.format |= Format_Head;
       total.emplace_back(fmt);

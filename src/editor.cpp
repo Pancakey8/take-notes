@@ -1,8 +1,10 @@
 #include "editor.hpp"
 #include "file_exp.hpp"
+#include <algorithm>
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <fstream>
 #include <imgui.h>
+#include <iostream>
 #include <unordered_set>
 #include <vector>
 
@@ -63,6 +65,21 @@ void Editor::event(const SDL_Event &event) {
       "=",  "*", "/",  "%", "&", "|", "^",  "~",  "\\", "`"};
 
   switch (event.type) {
+  case SDL_EVENT_MOUSE_WHEEL: {
+    int dir = event.wheel.integer_y;
+    if (dir > 0 && row_start > 0) {
+      --row_start;
+    } else if (dir < 0) {
+      ++row_start;
+    }
+  } break;
+  case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+    if (event.button.clicks == 1 && event.button.button == SDL_BUTTON_LEFT) {
+      do_cursor_choose = true;
+      choose_x = event.button.x;
+      choose_y = event.button.y;
+    }
+  } break;
   case SDL_EVENT_TEXT_INPUT: {
     if (mode == EditorMode::Select) {
       select_erase_exit();
@@ -77,6 +94,7 @@ void Editor::event(const SDL_Event &event) {
     case SDLK_BACKSPACE: {
       if (mode == EditorMode::Select) {
         select_erase_exit();
+        reparse();
         break;
       }
       if (cursor == 0)
@@ -97,12 +115,14 @@ void Editor::event(const SDL_Event &event) {
       }
       cursor -= len;
       text.erase(cursor, len);
+      reparse();
     } break;
     case SDLK_RETURN: {
       if (mode == EditorMode::Select) {
         select_erase_exit();
       }
       text.insert(cursor++, "\n", 1);
+      reparse();
     } break;
     case SDLK_LEFT: {
       if (cursor == 0)
@@ -132,6 +152,7 @@ void Editor::event(const SDL_Event &event) {
         len = utf8_prev_len(text, cursor);
       }
       cursor -= len;
+      normalize_cursor();
     } break;
     case SDLK_RIGHT: {
       if (cursor >= text.size())
@@ -161,6 +182,7 @@ void Editor::event(const SDL_Event &event) {
         len = utf8_next_len(text, cursor);
       }
       cursor += len;
+      normalize_cursor();
     } break;
     case SDLK_UP: {
       if (cursor == 0)
@@ -208,6 +230,7 @@ void Editor::event(const SDL_Event &event) {
         byte_pos += utf8_next_len(text, byte_pos);
 
       cursor = byte_pos;
+      normalize_cursor();
     } break;
 
     case SDLK_DOWN: {
@@ -261,6 +284,7 @@ void Editor::event(const SDL_Event &event) {
         byte_pos += utf8_next_len(text, byte_pos);
 
       cursor = byte_pos;
+      normalize_cursor();
     } break;
     case SDLK_TAB: {
       if (mode == EditorMode::Select) {
@@ -268,6 +292,7 @@ void Editor::event(const SDL_Event &event) {
       }
       text.insert(cursor, "  ", 2);
       cursor += 2;
+      reparse();
     } break;
     case SDLK_V:
       if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
@@ -279,6 +304,7 @@ void Editor::event(const SDL_Event &event) {
         size_t clip_len = strlen(clip);
         text.insert(cursor, clip, clip_len);
         cursor += clip_len;
+        reparse();
       }
       break;
     case SDLK_C:
@@ -307,6 +333,7 @@ void Editor::event(const SDL_Event &event) {
           }
           SDL_SetClipboardText(select.c_str());
           select_erase_exit();
+          reparse();
         }
       }
       break;
@@ -326,7 +353,6 @@ void Editor::event(const SDL_Event &event) {
     default:
       break;
     }
-    reparse();
   } break;
   default:
     break;
@@ -348,7 +374,7 @@ void Editor::render() {
   draw_list->AddRectFilled({x, y}, {x + w, y + h},
                            IM_COL32(0x20, 0x20, 0x20, 0xFF));
 
-  float padding = 20.0f;
+  float padding = 40.0f;
   float content_x = x + padding;
   float content_y = y + padding;
   float content_w = w - 2.0f * padding;
@@ -385,25 +411,68 @@ void Editor::render() {
                              IM_COL32(0xFF, 0xFF, 0, 0x7F));
   };
 
+  auto draw_linenumber = [&](size_t row, Token &token) {
+    std::string num{std::to_string(row + 1)};
+    size_t sz =
+        plain->CalcTextSizeA(font_size, content_w, content_w + 10, num.c_str())
+            .x;
+    float fsize = font_size;
+    if (std::holds_alternative<FormattedString>(token) &&
+        std::get<FormattedString>(token).format & Format_Head) {
+      fsize = 2 * fsize;
+    }
+    draw_list->AddText(
+        plain, font_size,
+        {cx - sz - (padding - sz) / 2, cy + (fsize - font_size) / 2},
+        IM_COL32(0xFF, 0xFF, 0xFF, 0x7F), num.c_str());
+  };
+
   size_t sel_start = std::min(cursor, select_anchor);
   size_t sel_end = std::max(cursor, select_anchor);
 
+  size_t row{0};
+  size_t closest_idx{0};
+  float closest_len{std::numeric_limits<float>().max()};
+
   for (auto &token : format) {
+    if (row >= row_start && cx == content_x) {
+      draw_linenumber(row, token);
+    }
+
     if (std::holds_alternative<NewLine>(token)) {
+      if (row < row_start) {
+        ++row;
+        ++idx;
+        continue;
+      }
       if (idx == cursor) {
         draw_cursor(cx, cy, current_size);
       }
       cy += current_size;
       if (cy >= content_y + content_h - current_size)
         break;
+      if (do_cursor_choose) {
+        float dx = cx - choose_x;
+        float dy = cy + current_size / 2 - choose_y;
+        float dist = SDL_sqrtf(dx * dx + dy * dy);
+        if (dist < closest_len) {
+          closest_len = dist;
+          closest_idx = idx;
+        }
+      }
       cx = content_x;
       ++idx;
+      ++row;
       current_size = font_size;
       continue;
     }
 
     if (std::holds_alternative<FormattedString>(token)) {
       auto fmt = std::get<FormattedString>(token);
+      if (row < row_start) {
+        idx += fmt.value.size();
+        continue;
+      }
       ImFont *font = (fmt.format & Format_Bold) ? bold : plain;
 
       current_size = (fmt.format & Format_Head) ? (2 * font_size) : font_size;
@@ -442,6 +511,20 @@ void Editor::render() {
             draw_cursor(cursor_x, cy, current_size);
           }
 
+          if (do_cursor_choose) {
+            std::string sub = word.substr(0, char_pos);
+            float cursor_x = cx + font->CalcTextSizeA(current_size, FLT_MAX,
+                                                      FLT_MAX, sub.c_str())
+                                      .x;
+            float dx = cursor_x - choose_x;
+            float dy = cy + current_size / 2 - choose_y;
+            float dist = SDL_sqrtf(dx * dx + dy * dy);
+            if (dist < closest_len) {
+              closest_len = dist;
+              closest_idx = idx;
+            }
+          }
+
           if (mode == EditorMode::Select && idx >= sel_start && idx < sel_end) {
             std::string sub = word.substr(0, char_pos + len);
             std::string prev = word.substr(0, char_pos);
@@ -468,9 +551,23 @@ void Editor::render() {
     }
   }
 
+  if (format.size() > 0 && std::holds_alternative<NewLine>(format.back())) {
+    draw_linenumber(row, format.back());
+  }
+
   if (idx == cursor) {
     draw_cursor(cx, cy, current_size);
   }
+
+  if (do_cursor_choose) {
+    if (choose_y > cy + current_size) {
+      cursor = text.size() - 1;
+    } else {
+      cursor = closest_idx;
+    }
+    do_cursor_choose = false;
+  }
+  row_max = row;
 
   ImGui::End();
 
@@ -522,4 +619,12 @@ void Editor::save() {
   fs << text;
   fs.flush();
   fs.close();
+}
+
+void Editor::normalize_cursor() {
+  size_t row = std::count(text.begin(), text.begin() + cursor, '\n');
+  if (row > row_max) {
+    std::cout << row_max << std::endl;
+    row_start += row - row_max + 1;
+  }
 }

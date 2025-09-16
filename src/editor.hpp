@@ -21,7 +21,11 @@ class Editor {
   bool show_error{false};
   bool ask_save{false};
   FileExplorer save_explorer{std::filesystem::current_path()};
+  size_t row_start{0}, row_max{std::numeric_limits<size_t>().max()};
+  bool do_cursor_choose{false};
+  int choose_x{0}, choose_y{0};
 
+  void normalize_cursor();
   void select_erase_exit();
   void reparse();
   void error_msg(std::string err);
