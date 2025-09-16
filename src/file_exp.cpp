@@ -19,11 +19,9 @@ void FileExplorer::on_open(FileExplorer::open_event_fn fn) { open_evt = fn; }
 void FileExplorer::render() {
   update_dir();
 
-  ImGui::Begin("Explorer", nullptr,
-               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
-                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
-  ImGui::SetWindowPos({x, y});
-  ImGui::SetWindowSize({w, h});
+  ImGui::Begin(title.c_str(), nullptr, flags);
+  ImGui::SetWindowPos({x, y}, ImGuiCond_Once);
+  ImGui::SetWindowSize({w, h}, ImGuiCond_Once);
 
   ImGui::Text("%s", root.c_str());
 
@@ -41,7 +39,7 @@ void FileExplorer::render() {
         std::string contents{};
         contents.resize(len);
         file.read(contents.data(), len);
-        open_evt(std::move(contents));
+        open_evt(fp, std::move(contents));
       }
       if (std::filesystem::is_directory(fp)) {
         root = fp;

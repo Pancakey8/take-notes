@@ -47,7 +47,8 @@ int main() {
   editor.font_size = font_size;
   // TODO: No hardcoded path
   FileExplorer explorer{std::filesystem::current_path().parent_path()};
-  explorer.on_open([&editor](auto file) { editor.set_text(std::move(file)); });
+  explorer.on_open(
+      [&editor](auto fp, auto file) { editor.set_text(fp, std::move(file)); });
 
   bool is_running{true};
   while (is_running) {
@@ -67,6 +68,8 @@ int main() {
     explorer.y = 0;
     explorer.h = eh;
     explorer.w = winw - ew;
+    explorer.flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoResize;
 
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -75,6 +78,8 @@ int main() {
     SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
     SDL_RenderClear(renderer);
     editor.render();
+    ImGui::SetNextWindowPos({explorer.x, explorer.y});
+    ImGui::SetNextWindowSize({explorer.w, explorer.h});
     explorer.render();
     ImGui::Render();
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);

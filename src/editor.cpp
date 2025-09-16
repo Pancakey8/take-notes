@@ -1,5 +1,7 @@
 #include "editor.hpp"
+#include "file_exp.hpp"
 #include <backends/imgui_impl_sdlrenderer3.h>
+#include <fstream>
 #include <imgui.h>
 #include <unordered_set>
 #include <vector>
@@ -315,6 +317,12 @@ void Editor::event(const SDL_Event &event) {
         cursor = text.size();
       }
       break;
+    case SDLK_S:
+      if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
+        save();
+      }
+      break;
+
     default:
       break;
     }
@@ -465,6 +473,24 @@ void Editor::render() {
   }
 
   ImGui::End();
+
+  if (show_error) {
+    ImGui::OpenPopup("Error");
+    show_error = false;
+  }
+
+  if (ImGui::BeginPopupModal("Error", NULL,
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::TextWrapped("%s", error.c_str());
+    if (ImGui::Button("OK", ImVec2(80, 0))) {
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
+
+  if (ask_save) {
+    save_explorer.render();
+  }
 }
 
 void Editor::reparse() {
@@ -473,7 +499,27 @@ void Editor::reparse() {
   format = std::move(parser.tokens);
 }
 
-void Editor::set_text(std::string &&text) {
+void Editor::set_text(std::filesystem::path path, std::string &&text) {
+  filepath = path;
   this->text = std::move(text);
   reparse();
+}
+
+void Editor::error_msg(std::string err) {
+  error = err;
+  show_error = true;
+}
+
+void Editor::save() {
+  std::ofstream fs(filepath);
+  if (!fs.is_open()) {
+    if (filepath.empty()) {
+      ask_save = true;
+    } else {
+      error_msg("Failed to save file!");
+    }
+  }
+  fs << text;
+  fs.flush();
+  fs.close();
 }
