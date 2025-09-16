@@ -1,4 +1,5 @@
 #include "markup.hpp"
+#include <iostream>
 
 bool Parser::is_eof() { return cursor >= input.size(); }
 bool Parser::bump() {
@@ -26,57 +27,70 @@ bool Parser::match(std::string pat) {
 
 bool is_special(char c) { return c == '*' || c == '\n' || c == '/'; }
 
-Token Parser::parse_bold() {
-  FormattedString str{};
-  str.format |= Format_Bold;
+std::vector<Token> Parser::parse_wrapped(std::string which, Format format) {
+  std::vector<Token> total{FormattedString{format, which}};
   size_t start = cursor;
-  while (!is_eof() && !match("**")) {
-    Token t = parse();
-    if (std::holds_alternative<NewLine>(t)) {
-      cursor = start;
-      FormattedString str = std::get<FormattedString>(parse_plain());
-      str.value = "**" + str.value;
-      return str;
-    } else if (std::holds_alternative<FormattedString>(t)) {
-      auto s = std::get<FormattedString>(t);
-      str.format |= s.format;
+  bool is_closed{false};
+  while (!is_eof()) {
+    if (match("\n")) {
+      size_t end = cursor - 1;
+      return {FormattedString{Format_Plain,
+                              which + input.substr(start, end - start)},
+              NewLine{}};
+    }
+    std::vector<Token> toks = parse();
+    for (auto &tok : toks) {
+      FormattedString fmt = std::get<FormattedString>(tok);
+      fmt.format |= format;
+      total.emplace_back(fmt);
+    }
+    if (match(which)) {
+      is_closed = true;
+      break;
     }
   }
-  str.value = "**" + input.substr(start, cursor - start);
-  return str;
+  if (is_closed) {
+    total.push_back(FormattedString{format, which});
+  }
+  return total;
 }
 
-Token Parser::parse_italic(std::string which) {
-  FormattedString str{};
-  str.format |= Format_Italic;
-  size_t start = cursor;
-  while (!is_eof() && !match(which)) {
-    Token t = parse();
-    if (std::holds_alternative<NewLine>(t)) {
-      cursor = start;
-      FormattedString str = std::get<FormattedString>(parse_plain());
-      str.value = which + str.value;
-      return str;
-    } else if (std::holds_alternative<FormattedString>(t)) {
-      auto s = std::get<FormattedString>(t);
-      str.format |= s.format;
+std::vector<Token> Parser::parse_bold() {
+  return parse_wrapped("**", Format_Bold);
+}
+
+std::vector<Token> Parser::parse_italic(std::string which) {
+  return parse_wrapped(which, Format_Italic);
+}
+
+std::vector<Token> Parser::parse_head() {
+  std::vector<Token> total{FormattedString{Format_Head, "#"}};
+  while (!is_eof()) {
+    if (match("\n")) {
+      total.push_back(NewLine{});
+      break;
+    }
+    std::vector<Token> toks = parse();
+    for (auto &tok : toks) {
+      FormattedString fmt = std::get<FormattedString>(tok);
+      fmt.format |= Format_Head;
+      total.emplace_back(fmt);
     }
   }
-  str.value = which + input.substr(start, cursor - start);
-  return str;
+  return total;
 }
 
-Token Parser::parse_plain() {
+std::vector<Token> Parser::parse_plain() {
   FormattedString str{};
   char c;
   while (!is_eof() && !is_special(c = peek())) {
     bump();
     str.value.push_back(c);
   }
-  return str;
+  return {str};
 }
 
-Token Parser::parse() {
+std::vector<Token> Parser::parse() {
   if (match("**")) {
     return parse_bold();
   }
@@ -87,13 +101,22 @@ Token Parser::parse() {
     return parse_italic("*");
   }
   if (match("\n")) {
-    return NewLine{};
+    std::vector<Token> toks{NewLine{}};
+    if (match("#")) {
+      auto p = parse_head();
+      toks.insert(toks.end(), p.begin(), p.end());
+    }
+    return toks;
+  }
+  if (cursor == 0 && match("#")) {
+    return parse_head();
   }
   return parse_plain();
 }
 
 void Parser::parse_all() {
   while (!is_eof()) {
-    tokens.emplace_back(parse());
+    auto p = parse();
+    tokens.insert(tokens.end(), p.begin(), p.end());
   }
 }

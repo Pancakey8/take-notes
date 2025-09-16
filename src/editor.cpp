@@ -349,9 +349,11 @@ void Editor::render() {
   float cx{content_x}, cy{content_y};
   size_t idx{0};
 
+  float current_size{font_size};
+
   auto render = [&](ImFont *font, const std::string &text, int fmt) {
     size_t vtx_start = draw_list->VtxBuffer.Size;
-    draw_list->AddText(font, font_size, {cx, cy},
+    draw_list->AddText(font, current_size, {cx, cy},
                        IM_COL32(0xFF, 0xFF, 0xFF, 0xFF), text.c_str());
     size_t vtx_end = draw_list->VtxBuffer.Size;
     if (fmt & Format_Italic) {
@@ -381,19 +383,22 @@ void Editor::render() {
   for (auto &token : format) {
     if (std::holds_alternative<NewLine>(token)) {
       if (idx == cursor) {
-        draw_cursor(cx, cy, font_size);
+        draw_cursor(cx, cy, current_size);
       }
-      cy += font_size;
-      if (cy >= content_y + content_h - font_size)
+      cy += current_size;
+      if (cy >= content_y + content_h - current_size)
         break;
       cx = content_x;
       ++idx;
+      current_size = font_size;
       continue;
     }
 
     if (std::holds_alternative<FormattedString>(token)) {
       auto fmt = std::get<FormattedString>(token);
       ImFont *font = (fmt.format & Format_Bold) ? bold : plain;
+
+      current_size = (fmt.format & Format_Head) ? (2 * font_size) : font_size;
 
       std::string text = fmt.value;
       size_t pos = 0;
@@ -408,12 +413,12 @@ void Editor::render() {
           word += ' ';
 
         float word_width =
-            font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, word.c_str()).x;
+            font->CalcTextSizeA(current_size, FLT_MAX, FLT_MAX, word.c_str()).x;
 
         if (cx + word_width > content_x + content_w) {
           cx = content_x;
-          cy += font_size;
-          if (cy >= content_y + content_h - font_size)
+          cy += current_size;
+          if (cy >= content_y + content_h - current_size)
             break;
         }
 
@@ -423,22 +428,23 @@ void Editor::render() {
 
           if (idx == cursor) {
             std::string sub = word.substr(0, char_pos);
-            float cursor_x =
-                cx +
-                font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, sub.c_str()).x;
-            draw_cursor(cursor_x, cy, font_size);
+            float cursor_x = cx + font->CalcTextSizeA(current_size, FLT_MAX,
+                                                      FLT_MAX, sub.c_str())
+                                      .x;
+            draw_cursor(cursor_x, cy, current_size);
           }
 
           if (mode == EditorMode::Select && idx >= sel_start && idx < sel_end) {
             std::string sub = word.substr(0, char_pos + len);
             std::string prev = word.substr(0, char_pos);
             float sub_width =
-                font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, sub.c_str()).x;
-            float prev_width =
-                font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, prev.c_str())
+                font->CalcTextSizeA(current_size, FLT_MAX, FLT_MAX, sub.c_str())
                     .x;
+            float prev_width = font->CalcTextSizeA(current_size, FLT_MAX,
+                                                   FLT_MAX, prev.c_str())
+                                   .x;
             draw_selection(cx + prev_width, cy, sub_width - prev_width,
-                           font_size);
+                           current_size);
           }
 
           idx += len;
@@ -455,7 +461,7 @@ void Editor::render() {
   }
 
   if (idx == cursor) {
-    draw_cursor(cx, cy, font_size);
+    draw_cursor(cx, cy, current_size);
   }
 
   ImGui::End();

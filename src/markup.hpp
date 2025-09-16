@@ -28,15 +28,18 @@ class Parser {
   char peek();
   bool match(std::string pat);
 
+  std::vector<Token> parse_wrapped(std::string which, Format fmt);
+
 public:
   std::vector<Token> tokens;
 
   Parser(std::string input) : input(input) {}
   Parser(std::string &&input) : input(std::move(input)) {}
 
-  Token parse_bold();
-  Token parse_italic(std::string which);
-  Token parse_plain();
-  Token parse();
+  std::vector<Token> parse_bold();
+  std::vector<Token> parse_italic(std::string which);
+  std::vector<Token> parse_head();
+  std::vector<Token> parse_plain();
+  std::vector<Token> parse();
   void parse_all();
 };
