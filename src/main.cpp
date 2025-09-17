@@ -8,7 +8,7 @@
 #include <iostream>
 #include <misc/freetype/imgui_freetype.h>
 
-int main() {
+int main(int, char *argv[]) {
   if (!SDL_Init(0))
     return 1;
 
@@ -34,20 +34,20 @@ int main() {
   cfg.RasterizerMultiply = 1.0f;
   cfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_Monochrome |
                         ImGuiFreeTypeBuilderFlags_MonoHinting;
-  // TODO: No hardcoded font
   float font_size{20.0f};
+  std::filesystem::path fonts_dir =
+      std::filesystem::weakly_canonical(argv[0]).parent_path() / "fonts";
   ImFont *plain_font = io.Fonts->AddFontFromFileTTF(
-      "/usr/share/fonts/noto/NotoSansMono-Medium.ttf", font_size, &cfg);
+      (fonts_dir / "NotoSansMono-Medium.ttf").c_str(), font_size, &cfg);
   ImFont *bold_font = io.Fonts->AddFontFromFileTTF(
-      "/usr/share/fonts/noto/NotoSansMono-ExtraBold.ttf", font_size, &cfg);
+      (fonts_dir / "NotoSansMono-ExtraBold.ttf").c_str(), font_size, &cfg);
 
   ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
   ImGui_ImplSDLRenderer3_Init(renderer);
 
   Editor editor{window, renderer, plain_font, bold_font};
   editor.font_size = font_size;
-  // TODO: No hardcoded path
-  FileExplorer explorer{std::filesystem::current_path().parent_path()};
+  FileExplorer explorer{std::filesystem::current_path()};
   explorer.on_open(
       [&editor](auto fp, auto file) { editor.set_text(fp, std::move(file)); });
 
