@@ -23,7 +23,7 @@ jobs:
         uses: jwlawson/actions-setup-cmake@v1
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DSDL_UNIX_CONSOLE_BUILD:BOOL=ON
 
       - name: Build
         run: cmake --build build --config Release --parallel

@@ -10,7 +10,7 @@ add_subdirectory(SDL3)
 
 file(GLOB IMGUI_SRC imgui/*.cpp)
 add_library(imgui ${IMGUI_SRC} imgui/backends/imgui_impl_sdl3.cpp imgui/backends/imgui_impl_sdlrenderer3.cpp)
-target_include_directories(imgui PRIVATE imgui)
+target_include_directories(imgui PRIVATE imgui SDL3/include)
 
 file(GLOB SRCS src/*.cpp)
 add_executable(notes ${SRCS})
