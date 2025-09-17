@@ -40,7 +40,7 @@ public:
   Editor(SDL_Window *window, SDL_Renderer *renderer, ImFont *plain,
          ImFont *bold)
       : plain(plain), bold(bold), window(window), renderer(renderer) {
-    save_explorer.on_open([&](auto fp, auto &&_) {
+    save_explorer.on_open([&](auto fp, auto &&) {
       filepath = fp;
       ask_save = false;
       save();

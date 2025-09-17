@@ -3,6 +3,8 @@ project(take-notes)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
 
 add_subdirectory(SDL3)
 
@@ -27,3 +29,6 @@ add_custom_target(
     COMMENT "Copying fonts ${FONTS_SRC} -> ${FONTS_OUT}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${FONTS_SRC} ${FONTS_OUT}
 )
+
+install(TARGETS notes RUNTIME DESTINATION bin/)
+install(DIRECTORY ${FONTS_SRC} DESTINATION bin/)
