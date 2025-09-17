@@ -5,6 +5,7 @@
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <imgui.h>
+#include <iostream>
 #include <misc/freetype/imgui_freetype.h>
 
 int main() {
@@ -50,8 +51,14 @@ int main() {
   explorer.on_open(
       [&editor](auto fp, auto file) { editor.set_text(fp, std::move(file)); });
 
+  bool is_resizing{false};
+
   bool is_running{true};
   while (is_running) {
+    auto [ex, ey, ew, eh] = editor.get_bg_rect();
+    int winw, winh;
+    SDL_GetWindowSize(window, &winw, &winh);
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       ImGui_ImplSDL3_ProcessEvent(&event);
@@ -61,9 +68,24 @@ int main() {
       }
     }
 
-    auto [ex, ey, ew, eh] = editor.get_bg_rect();
-    int winw, winh;
-    SDL_GetWindowSize(window, &winw, &winh);
+    auto [cx, cy] = ImGui::GetMousePos();
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+      if ((ex + ew - 5 <= cx && cx <= ex + ew + 5 && 0 <= cy && cy <= eh) ||
+          is_resizing) {
+        is_resizing = true;
+        auto [xrel, _] = ImGui::GetMouseDragDelta();
+        ImGui::ResetMouseDragDelta();
+        editor.width += xrel / static_cast<float>(winw);
+        auto [x, y, w, h] = editor.get_bg_rect();
+        ex = x;
+        ey = y;
+        ew = w;
+        eh = h;
+      }
+    } else {
+      is_resizing = false;
+    }
+
     explorer.x = ex + ew;
     explorer.y = 0;
     explorer.h = eh;
@@ -81,6 +103,25 @@ int main() {
     ImGui::SetNextWindowPos({explorer.x, explorer.y});
     ImGui::SetNextWindowSize({explorer.w, explorer.h});
     explorer.render();
+
+    if (!is_running && editor.is_save_needed()) {
+      is_running = true;
+      ImGui::OpenPopup("Notice");
+    }
+
+    if (ImGui::BeginPopupModal("Notice", NULL,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextWrapped("%s", "You haven't saved your file yet. Quit?");
+      if (ImGui::Button("Yes", ImVec2(80, 0))) {
+        is_running = false;
+        ImGui::CloseCurrentPopup();
+      }
+      if (ImGui::Button("No", ImVec2(80, 0))) {
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
+    }
+
     ImGui::Render();
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);

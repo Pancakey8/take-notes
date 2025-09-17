@@ -45,6 +45,7 @@ public:
       ask_save = false;
       save();
     });
+    save_explorer.can_close = true;
     save_explorer.title = "Save As";
     save_explorer.x = 100;
     save_explorer.y = 100;
@@ -54,6 +55,7 @@ public:
   void event(const SDL_Event &event);
   void render();
   void set_text(std::filesystem::path path, std::string &&text);
+  bool is_save_needed();
 
   ImVec4 get_bg_rect();
 };

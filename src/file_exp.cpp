@@ -12,6 +12,7 @@ void FileExplorer::update_dir() {
   for (auto &entry : std::filesystem::directory_iterator(root)) {
     file_list.emplace_back(entry.path());
   }
+  std::sort(file_list.begin(), file_list.end());
 }
 
 void FileExplorer::on_open(FileExplorer::open_event_fn fn) { open_evt = fn; }
@@ -23,10 +24,32 @@ void FileExplorer::render() {
   ImGui::SetWindowPos({x, y}, ImGuiCond_Once);
   ImGui::SetWindowSize({w, h}, ImGuiCond_Once);
 
-  ImGui::Text("%s", root.c_str());
+  float avail = ImGui::GetContentRegionAvail().x;
+  float item_w = ImGui::CalcTextSize(root.c_str()).x +
+                 ImGui::CalcTextSize("New File").x +
+                 ImGui::GetStyle().ItemSpacing.x;
+  auto new_file = [&]() { creating_file = true; };
+  if (item_w <= avail) {
+    ImGui::Text("%s", root.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("New File")) {
+      new_file();
+    }
+  } else {
+    ImGui::Text("%s", root.c_str());
+    if (ImGui::Button("New File")) {
+      new_file();
+    }
+  }
+
+  ImGui::Spacing();
 
   if (root.has_parent_path() && ImGui::Button("..")) {
     root = root.parent_path();
+  }
+
+  if (ImGui::IsKeyDown(ImGuiKey_Escape) && can_close) {
+    is_closed = true;
   }
 
   for (const auto &fp : file_list) {
@@ -47,5 +70,34 @@ void FileExplorer::render() {
     }
   }
 
+  if (creating_file) {
+    std::string filename{};
+    filename.resize(1024);
+    if (ImGui::InputText("Filename", filename.data(), filename.capacity(),
+                         ImGuiInputTextFlags_EnterReturnsTrue)) {
+      if (filename.size() != 0) {
+        create_file(filename);
+      }
+      creating_file = false;
+    }
+  }
+
   ImGui::End();
+}
+
+void FileExplorer::create_file(std::string filename) {
+  std::filesystem::path pt = root / filename;
+  if (!std::filesystem::exists(pt.parent_path())) {
+    return;
+  }
+
+  if (std::filesystem::exists(pt) && std::filesystem::is_directory(pt))
+    return;
+
+  std::ofstream ofs(pt, std::ios::binary | std::ios::trunc);
+  if (!ofs)
+    return;
+  ofs.close();
+
+  update_dir();
 }

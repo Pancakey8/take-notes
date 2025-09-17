@@ -628,7 +628,7 @@ void Editor::render() {
 
   if (do_cursor_choose) {
     if (choose_y > cy + current_size) {
-      cursor = text.size() - 1;
+      cursor = text.size() == 0 ? 0 : text.size() - 1;
     } else {
       cursor = closest_idx;
     }
@@ -654,7 +654,12 @@ void Editor::render() {
   }
 
   if (ask_save) {
-    save_explorer.render();
+    if (!save_explorer.is_closed) {
+      ImGui::SetNextWindowFocus();
+      save_explorer.render();
+    } else {
+      ask_save = false;
+    }
   }
 }
 
@@ -668,6 +673,7 @@ void Editor::set_text(std::filesystem::path path, std::string &&text) {
   filepath = path;
   this->text = std::move(text);
   reparse();
+  normalize_cursor();
 }
 
 void Editor::error_msg(std::string err) {
@@ -680,6 +686,7 @@ void Editor::save() {
   if (!fs.is_open()) {
     if (filepath.empty()) {
       ask_save = true;
+      save_explorer.is_closed = false;
     } else {
       error_msg("Failed to save file!");
     }
@@ -690,14 +697,14 @@ void Editor::save() {
 }
 
 void Editor::normalize_cursor() {
+  if (cursor > text.size()) {
+    cursor = text.size();
+  }
   size_t row = std::count(text.begin(), text.begin() + cursor, '\n');
   if (row > row_max) {
     row_start += row - row_max;
   } else if (row < row_start) {
     row_start = row;
-  }
-  if (cursor > text.size()) {
-    cursor = text.size();
   }
 }
 
@@ -727,4 +734,20 @@ float apply_head(float fsize, int head_n) {
   default:
     return fsize;
   }
+}
+
+bool Editor::is_save_needed() {
+  if (filepath.empty()) {
+    return true;
+  }
+
+  std::ifstream fs(filepath);
+  fs.seekg(0, std::ios::end);
+  size_t sz = fs.tellg();
+  fs.seekg(0, std::ios::beg);
+  std::string contents{};
+  contents.resize(sz);
+  fs.read(contents.data(), sz);
+
+  return contents != text;
 }

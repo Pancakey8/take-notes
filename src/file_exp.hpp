@@ -11,8 +11,10 @@ class FileExplorer {
   using open_event_fn =
       std::function<void(std::filesystem::path, std::string &&)>;
   open_event_fn open_evt = 0;
+  bool creating_file{false};
 
 public:
+  bool can_close{false}, is_closed{false};
   float x, y, w, h;
   ImGuiWindowFlags flags{};
   std::string title{"Explorer"};
@@ -20,4 +22,5 @@ public:
   void render();
   void on_open(open_event_fn event);
   void update_dir();
+  void create_file(std::string filename);
 };
