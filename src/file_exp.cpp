@@ -2,6 +2,7 @@
 #include <fstream>
 #include <imgui.h>
 #include <iostream>
+#include <algorithm>
 
 FileExplorer::FileExplorer(const std::filesystem::path root) : root(root) {
   filename.resize(1024);
