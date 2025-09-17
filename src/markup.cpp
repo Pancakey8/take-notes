@@ -25,7 +25,17 @@ bool Parser::match(std::string pat) {
   return true;
 }
 
-bool is_special(char c) { return c == '*' || c == '\n' || c == '/'; }
+bool Parser::is_special() {
+  if (is_eof())
+    return true;
+  char c = peek();
+  bool spec = c == '*' || c == '\n' || c == '/' || c == '\\';
+  if (cursor + 2 < input.size()) {
+    std::string pat2 = input.substr(cursor, 2);
+    spec |= pat2 == "~~";
+  }
+  return spec;
+}
 
 std::vector<Token> Parser::parse_wrapped(std::string which, Format format) {
   std::vector<Token> total{FormattedString{format, which}};
@@ -38,6 +48,10 @@ std::vector<Token> Parser::parse_wrapped(std::string which, Format format) {
                               which + input.substr(start, end - start)},
               NewLine{}};
     }
+    if (match(which)) {
+      is_closed = true;
+      break;
+    }
     std::vector<Token> toks = parse();
     for (auto &tok : toks) {
       if (std::holds_alternative<NewLine>(tok)) {
@@ -47,10 +61,6 @@ std::vector<Token> Parser::parse_wrapped(std::string which, Format format) {
       FormattedString fmt = std::get<FormattedString>(tok);
       fmt.format |= format;
       total.emplace_back(fmt);
-    }
-    if (match(which)) {
-      is_closed = true;
-      break;
     }
   }
   if (is_closed) {
@@ -63,12 +73,16 @@ std::vector<Token> Parser::parse_bold() {
   return parse_wrapped("**", Format_Bold);
 }
 
+std::vector<Token> Parser::parse_strike() {
+  return parse_wrapped("~~", Format_Strike);
+}
+
 std::vector<Token> Parser::parse_italic(std::string which) {
   return parse_wrapped(which, Format_Italic);
 }
 
-std::vector<Token> Parser::parse_head() {
-  std::vector<Token> total{FormattedString{Format_Head, "#"}};
+std::vector<Token> Parser::parse_head(std::string which, Format head_n) {
+  std::vector<Token> total{FormattedString{head_n, which}};
   while (!is_eof()) {
     if (match("\n")) {
       total.push_back(NewLine{});
@@ -81,7 +95,7 @@ std::vector<Token> Parser::parse_head() {
         continue;
       }
       FormattedString fmt = std::get<FormattedString>(tok);
-      fmt.format |= Format_Head;
+      fmt.format |= head_n;
       total.emplace_back(fmt);
     }
   }
@@ -90,17 +104,56 @@ std::vector<Token> Parser::parse_head() {
 
 std::vector<Token> Parser::parse_plain() {
   FormattedString str{};
-  char c;
-  while (!is_eof() && !is_special(c = peek())) {
+  while (!is_eof() && !is_special()) {
+    char c = peek();
     bump();
     str.value.push_back(c);
   }
   return {str};
 }
 
+std::vector<Token> Parser::parse_code() {
+  size_t end = input.find('\n', cursor);
+  if (end == input.npos) {
+    end = input.size();
+  }
+  std::vector<Token> toks{
+      FormattedString{Format_Code, "\t" + input.substr(cursor, end - cursor)}};
+  cursor = end;
+  return toks;
+}
+
+std::vector<Token> Parser::parse_line_begin() {
+  if (match("###")) {
+    return parse_head("###", Format_Head3);
+  } else if (match("##")) {
+    return parse_head("##", Format_Head2);
+  } else if (match("#")) {
+    return parse_head("#", Format_Head1);
+  } else if (match("\t")) {
+    return parse_code();
+  }
+  return parse_plain();
+}
+
 std::vector<Token> Parser::parse() {
+  if (match("\\")) {
+    if (!is_eof() && is_special()) {
+      char c = peek();
+      bump();
+      if (c == '\n') {
+        return {FormattedString{Format_Plain, "\\"}, NewLine{}};
+      }
+      return {FormattedString{Format_Plain, "\\" + std::string(1, c)}};
+    } else {
+      return {FormattedString{Format_Plain, "\\"}};
+    }
+  }
   if (match("**")) {
     return parse_bold();
+  }
+  if (match("~~")) {
+    return parse_strike();
   }
   if (match("/")) {
     return parse_italic("/");
@@ -110,14 +163,12 @@ std::vector<Token> Parser::parse() {
   }
   if (match("\n")) {
     std::vector<Token> toks{NewLine{}};
-    if (match("#")) {
-      auto p = parse_head();
-      toks.insert(toks.end(), p.begin(), p.end());
-    }
+    auto p = parse_line_begin();
+    toks.insert(toks.end(), p.begin(), p.end());
     return toks;
   }
-  if (cursor == 0 && match("#")) {
-    return parse_head();
+  if (cursor == 0) {
+    return parse_line_begin();
   }
   return parse_plain();
 }

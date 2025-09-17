@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <vector>
 
+float apply_head(float fsize, int head_n);
+
 // TODO: Swap for proper utf8
 size_t utf8_next_len(const std::string &s, size_t pos) {
   if (pos >= s.size())
@@ -45,6 +47,7 @@ void Editor::select_erase_exit() {
     cursor = select_anchor;
   }
   mode = EditorMode::Insert;
+  normalize_cursor();
 }
 
 ImVec4 Editor::get_bg_rect() {
@@ -74,6 +77,9 @@ void Editor::event(const SDL_Event &event) {
     }
   } break;
   case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+    if (mode == EditorMode::Select) {
+      mode = EditorMode::Insert;
+    }
     if (event.button.clicks == 1 && event.button.button == SDL_BUTTON_LEFT) {
       do_cursor_choose = true;
       choose_x = event.button.x;
@@ -84,9 +90,20 @@ void Editor::event(const SDL_Event &event) {
     if (mode == EditorMode::Select) {
       select_erase_exit();
     }
-    size_t inp_len = strlen(event.text.text);
-    text.insert(cursor, event.text.text, inp_len);
-    cursor += inp_len;
+    std::string inp(event.text.text);
+    text.insert(cursor, inp.data(), inp.size());
+    Token hover = get_hovered_token();
+    if (!(std::holds_alternative<FormattedString>(hover) &&
+          std::get<FormattedString>(hover).format & Format_Code)) {
+      if (inp == "*") {
+        text.insert(cursor, "*", 1);
+      } else if (inp == "/") {
+        text.insert(cursor, "/", 1);
+      } else if (inp == "~") {
+        text.insert(cursor, "~", 1);
+      }
+    }
+    cursor += inp.size();
     reparse();
   } break;
   case SDL_EVENT_KEY_DOWN: {
@@ -116,6 +133,7 @@ void Editor::event(const SDL_Event &event) {
       cursor -= len;
       text.erase(cursor, len);
       reparse();
+      normalize_cursor();
     } break;
     case SDLK_RETURN: {
       if (mode == EditorMode::Select) {
@@ -123,6 +141,7 @@ void Editor::event(const SDL_Event &event) {
       }
       text.insert(cursor++, "\n", 1);
       reparse();
+      normalize_cursor();
     } break;
     case SDLK_LEFT: {
       if (cursor == 0)
@@ -290,8 +309,8 @@ void Editor::event(const SDL_Event &event) {
       if (mode == EditorMode::Select) {
         select_erase_exit();
       }
-      text.insert(cursor, "  ", 2);
-      cursor += 2;
+      text.insert(cursor, "\t", 1);
+      cursor += 1;
       reparse();
     } break;
     case SDLK_V:
@@ -305,6 +324,7 @@ void Editor::event(const SDL_Event &event) {
         text.insert(cursor, clip, clip_len);
         cursor += clip_len;
         reparse();
+        normalize_cursor();
       }
       break;
     case SDLK_C:
@@ -349,6 +369,36 @@ void Editor::event(const SDL_Event &event) {
         save();
       }
       break;
+
+    case SDLK_HOME: {
+      if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
+        cursor = 0;
+        normalize_cursor();
+        break;
+      }
+      size_t start = text.rfind('\n', cursor == 0 ? 0 : (cursor - 1));
+      if (start == text.npos) {
+        start = 0;
+      } else {
+        start += 1;
+      }
+      cursor = start;
+      normalize_cursor();
+    } break;
+
+    case SDLK_END: {
+      if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
+        cursor = text.size();
+        normalize_cursor();
+        break;
+      }
+      size_t end = text.find('\n', cursor > text.size() ? text.size() : cursor);
+      if (end == text.npos) {
+        end = text.size();
+      }
+      cursor = end;
+      normalize_cursor();
+    } break;
 
     default:
       break;
@@ -417,9 +467,9 @@ void Editor::render() {
         plain->CalcTextSizeA(font_size, content_w, content_w + 10, num.c_str())
             .x;
     float fsize = font_size;
-    if (std::holds_alternative<FormattedString>(token) &&
-        std::get<FormattedString>(token).format & Format_Head) {
-      fsize = 2 * fsize;
+    if (std::holds_alternative<FormattedString>(token)) {
+      auto fmt = std::get<FormattedString>(token).format;
+      fsize = apply_head(fsize, fmt);
     }
     draw_list->AddText(
         plain, font_size,
@@ -475,7 +525,9 @@ void Editor::render() {
       }
       ImFont *font = (fmt.format & Format_Bold) ? bold : plain;
 
-      current_size = (fmt.format & Format_Head) ? (2 * font_size) : font_size;
+      current_size = apply_head(font_size, fmt.format);
+
+      float block_start = cy;
 
       std::string text = fmt.value;
       size_t pos = 0;
@@ -491,6 +543,15 @@ void Editor::render() {
 
         float word_width =
             font->CalcTextSizeA(current_size, FLT_MAX, FLT_MAX, word.c_str()).x;
+
+        if (fmt.format & Format_Strike) {
+          float sz = 1.0f;
+          sz = apply_head(sz, fmt.format);
+          draw_list->AddRectFilled(
+              {cx, cy + current_size / 2 - sz / 2},
+              {cx + word_width, cy + current_size / 2 + sz / 2},
+              IM_COL32(0xFF, 0xFF, 0xFF, 0xFF));
+        }
 
         if (cx + word_width > content_x + content_w) {
           cx = content_x;
@@ -547,6 +608,12 @@ void Editor::render() {
         pos = next_space + 1;
       }
 
+      if (fmt.format & Format_Code) {
+        draw_list->AddRectFilled({content_x, block_start},
+                                 {content_x + 2, cy + current_size},
+                                 IM_COL32(0xFF, 0xFF, 0xFF, 0xFF));
+      }
+
       continue;
     }
   }
@@ -567,7 +634,8 @@ void Editor::render() {
     }
     do_cursor_choose = false;
   }
-  row_max = row;
+
+  row_max = std::max<float>(row, content_h / font_size);
 
   ImGui::End();
 
@@ -624,7 +692,39 @@ void Editor::save() {
 void Editor::normalize_cursor() {
   size_t row = std::count(text.begin(), text.begin() + cursor, '\n');
   if (row > row_max) {
-    std::cout << row_max << std::endl;
-    row_start += row - row_max + 1;
+    row_start += row - row_max;
+  } else if (row < row_start) {
+    row_start = row;
+  }
+  if (cursor > text.size()) {
+    cursor = text.size();
+  }
+}
+
+Token Editor::get_hovered_token() {
+  size_t idx{0};
+  for (auto &token : format) {
+    if (std::holds_alternative<NewLine>(token)) {
+      ++idx;
+    } else if (std::holds_alternative<FormattedString>(token)) {
+      idx += std::get<FormattedString>(token).value.size();
+    }
+    if (idx >= cursor) {
+      return token;
+    }
+  }
+  return format.size() == 0 ? Token{NewLine{}} : format.back();
+}
+
+float apply_head(float fsize, int head_n) {
+  switch (head_n & (Format_Head1 | Format_Head2 | Format_Head3)) {
+  case Format_Head1:
+    return 2 * fsize;
+  case Format_Head2:
+    return 1.6 * fsize;
+  case Format_Head3:
+    return 1.2 * fsize;
+  default:
+    return fsize;
   }
 }

@@ -30,6 +30,7 @@ class Editor {
   void reparse();
   void error_msg(std::string err);
   void save();
+  Token get_hovered_token();
 
 public:
   float width{0.8f}, height{1.0f}, font_size{18.0f};
