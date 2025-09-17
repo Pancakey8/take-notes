@@ -12,6 +12,7 @@ class FileExplorer {
       std::function<void(std::filesystem::path, std::string &&)>;
   open_event_fn open_evt = 0;
   bool creating_file{false};
+  std::string filename;
 
 public:
   bool can_close{false}, is_closed{false};

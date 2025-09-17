@@ -4,6 +4,7 @@
 #include <iostream>
 
 FileExplorer::FileExplorer(const std::filesystem::path root) : root(root) {
+  filename.resize(1024);
   update_dir();
 }
 
@@ -71,8 +72,6 @@ void FileExplorer::render() {
   }
 
   if (creating_file) {
-    std::string filename{};
-    filename.resize(1024);
     if (ImGui::InputText("Filename", filename.data(), filename.capacity(),
                          ImGuiInputTextFlags_EnterReturnsTrue)) {
       if (filename.size() != 0) {

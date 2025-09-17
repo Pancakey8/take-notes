@@ -19,8 +19,6 @@ int main(int, char *argv[]) {
                                    &window, &renderer))
     return 1;
 
-  SDL_StartTextInput(window);
-
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
 

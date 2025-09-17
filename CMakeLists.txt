@@ -14,7 +14,7 @@ file(GLOB SRCS src/*.cpp)
 add_executable(notes ${SRCS})
 target_compile_features(notes PRIVATE cxx_std_23)
 target_compile_options(notes PRIVATE -Wall -Wextra -Werror)
-target_link_libraries(notes PRIVATE GL imgui SDL3::SDL3)
+target_link_libraries(notes PRIVATE imgui SDL3::SDL3)
 target_include_directories(notes PRIVATE imgui)
 
 set(FONTS_SRC ${CMAKE_SOURCE_DIR}/src/fonts)

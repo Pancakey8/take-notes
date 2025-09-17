@@ -419,6 +419,9 @@ void Editor::render() {
 
   is_focused = ImGui::IsWindowFocused();
 
+  if (is_focused)
+    SDL_StartTextInput(window);
+
   ImDrawList *draw_list = ImGui::GetWindowDrawList();
 
   draw_list->AddRectFilled({x, y}, {x + w, y + h},

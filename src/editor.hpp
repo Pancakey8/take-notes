@@ -16,7 +16,6 @@ class Editor {
   size_t cursor{0};
   EditorMode mode{EditorMode::Insert};
   size_t select_anchor{0};
-  bool is_focused{false};
   std::string error{};
   bool show_error{false};
   bool ask_save{false};
@@ -37,6 +36,7 @@ public:
   ImFont *plain, *bold;
   SDL_Window *window;
   SDL_Renderer *renderer;
+  bool is_focused{false};
   Editor(SDL_Window *window, SDL_Renderer *renderer, ImFont *plain,
          ImFont *bold)
       : plain(plain), bold(bold), window(window), renderer(renderer) {
