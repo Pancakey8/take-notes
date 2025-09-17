@@ -1,8 +1,8 @@
 #include "file_exp.hpp"
+#include <algorithm>
 #include <fstream>
 #include <imgui.h>
 #include <iostream>
-#include <algorithm>
 
 FileExplorer::FileExplorer(const std::filesystem::path root) : root(root) {
   filename.resize(1024);
@@ -27,18 +27,18 @@ void FileExplorer::render() {
   ImGui::SetWindowSize({w, h}, ImGuiCond_Once);
 
   float avail = ImGui::GetContentRegionAvail().x;
-  float item_w = ImGui::CalcTextSize(root.c_str()).x +
+  float item_w = ImGui::CalcTextSize(root.string().c_str()).x +
                  ImGui::CalcTextSize("New File").x +
                  ImGui::GetStyle().ItemSpacing.x;
   auto new_file = [&]() { creating_file = true; };
   if (item_w <= avail) {
-    ImGui::Text("%s", root.c_str());
+    ImGui::Text("%s", root.string().c_str());
     ImGui::SameLine();
     if (ImGui::Button("New File")) {
       new_file();
     }
   } else {
-    ImGui::Text("%s", root.c_str());
+    ImGui::Text("%s", root.string().c_str());
     if (ImGui::Button("New File")) {
       new_file();
     }
@@ -55,7 +55,7 @@ void FileExplorer::render() {
   }
 
   for (const auto &fp : file_list) {
-    if (ImGui::Button(fp.filename().c_str())) {
+    if (ImGui::Button(fp.filename().string().c_str())) {
       if (std::filesystem::is_regular_file(fp)) {
         std::ifstream file(fp);
         file.seekg(0, std::ios::end);

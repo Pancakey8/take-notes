@@ -36,9 +36,11 @@ int main(int, char *argv[]) {
   std::filesystem::path fonts_dir =
       std::filesystem::weakly_canonical(argv[0]).parent_path() / "fonts";
   ImFont *plain_font = io.Fonts->AddFontFromFileTTF(
-      (fonts_dir / "NotoSansMono-Medium.ttf").c_str(), font_size, &cfg);
+      (fonts_dir / "NotoSansMono-Medium.ttf").string().c_str(), font_size,
+      &cfg);
   ImFont *bold_font = io.Fonts->AddFontFromFileTTF(
-      (fonts_dir / "NotoSansMono-ExtraBold.ttf").c_str(), font_size, &cfg);
+      (fonts_dir / "NotoSansMono-ExtraBold.ttf").string().c_str(), font_size,
+      &cfg);
 
   ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
   ImGui_ImplSDLRenderer3_Init(renderer);
