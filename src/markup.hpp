@@ -15,8 +15,8 @@ enum Format : int {
 };
 
 struct FormattedString {
-  int format;
-  std::string value;
+  int format{0};
+  std::string value{};
 };
 
 struct NewLine {};

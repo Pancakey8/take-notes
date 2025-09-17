@@ -85,7 +85,7 @@ std::vector<Token> Parser::parse_head(std::string which, Format head_n) {
   std::vector<Token> total{FormattedString{head_n, which}};
   while (!is_eof()) {
     if (match("\n")) {
-      total.push_back(NewLine{});
+      total.emplace_back(NewLine{});
       break;
     }
     std::vector<Token> toks = parse();
