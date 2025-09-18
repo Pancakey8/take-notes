@@ -1,4 +1,5 @@
 #include "file_exp.hpp"
+#include "utility.hpp"
 #include <algorithm>
 #include <fstream>
 #include <imgui.h>
@@ -57,19 +58,7 @@ void FileExplorer::render() {
   for (const auto &fp : file_list) {
     if (ImGui::Button(fp.filename().string().c_str())) {
       if (std::filesystem::is_regular_file(fp)) {
-        std::ifstream file(fp);
-        file.seekg(0, std::ios::end);
-        size_t len = file.tellg();
-        file.seekg(0, std::ios::beg);
-        std::string contents{};
-        contents.resize(len);
-        file.read(contents.data(), len);
-        // For Windows
-        for (std::string::size_type pos = 0;
-             (pos = contents.find("\r\n", pos)) != std::string::npos;
-             pos += 1) {
-          contents.replace(pos, 2, "\n");
-        }
+        std::string contents{read_file_text(fp)};
         open_evt(fp, std::move(contents));
       }
       if (std::filesystem::is_directory(fp)) {

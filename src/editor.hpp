@@ -23,10 +23,12 @@ class Editor {
   size_t row_start{0}, row_max{std::numeric_limits<size_t>().max()};
   bool do_cursor_choose{false};
   int choose_x{0}, choose_y{0};
+  std::unordered_map<std::filesystem::path, ImTextureID> images{};
 
   void normalize_cursor();
   void select_erase_exit();
   void reparse();
+  void update_imgs();
   void error_msg(std::string err);
   void save();
   Token get_hovered_token();
@@ -60,4 +62,6 @@ public:
   bool is_save_needed();
 
   ImVec4 get_bg_rect();
+
+  ~Editor();
 };

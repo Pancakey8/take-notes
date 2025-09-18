@@ -31,7 +31,7 @@ bool Parser::is_special() {
   if (is_eof())
     return true;
   std::string c = peek();
-  bool spec = c == "*" || c == "\n" || c == "/" || c == "\\";
+  bool spec = c == "*" || c == "\n" || c == "/" || c == "\\" || c == "[";
   if (cursor + 2 < input.size()) {
     std::string pat2 = input.substr(cursor, 2);
     spec |= pat2 == "~~";
@@ -56,7 +56,7 @@ std::vector<Token> Parser::parse_wrapped(std::string which, Format format) {
     }
     std::vector<Token> toks = parse();
     for (auto &tok : toks) {
-      if (std::holds_alternative<NewLine>(tok)) {
+      if (!std::holds_alternative<FormattedString>(tok)) {
         total.emplace_back(tok);
         continue;
       }
@@ -83,6 +83,29 @@ std::vector<Token> Parser::parse_italic(std::string which) {
   return parse_wrapped(which, Format_Italic);
 }
 
+std::vector<Token> Parser::parse_image() {
+  size_t start{cursor};
+  bool is_closed{false};
+  while (!is_eof()) {
+    if (peek() == "\n")
+      break;
+    if (match("]")) {
+      is_closed = true;
+      break;
+    }
+    bump();
+  }
+  if (!is_closed) {
+    return {FormattedString{Format_Plain,
+                            "[" + input.substr(start, cursor - start)}};
+  } else {
+    std::filesystem::path fp{input.substr(start, cursor - start - 1)};
+    return {FormattedString{Format_Plain,
+                            "[" + input.substr(start, cursor - start)},
+            Image{fp}};
+  }
+}
+
 std::vector<Token> Parser::parse_line_wide(std::string which, Format format) {
   std::vector<Token> total{FormattedString{format, which}};
   while (!is_eof()) {
@@ -91,7 +114,7 @@ std::vector<Token> Parser::parse_line_wide(std::string which, Format format) {
     }
     std::vector<Token> toks = parse();
     for (auto &tok : toks) {
-      if (std::holds_alternative<NewLine>(tok)) {
+      if (!std::holds_alternative<FormattedString>(tok)) {
         total.emplace_back(tok);
         continue;
       }
@@ -171,6 +194,9 @@ std::vector<Token> Parser::parse() {
   }
   if (match("*")) {
     return parse_italic("*");
+  }
+  if (match("[")) {
+    return parse_image();
   }
   if (match("\n")) {
     std::vector<Token> toks{NewLine{}};

@@ -1,6 +1,7 @@
 #include "editor.hpp"
 #include "file_exp.hpp"
 #include "utility.hpp"
+#include <SDL3_image/SDL_image.h>
 #include <algorithm>
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <fstream>
@@ -496,9 +497,28 @@ void Editor::render() {
   size_t closest_idx{0};
   float closest_len{std::numeric_limits<float>().max()};
 
-  bool last_was_newline{true};
+  std::vector<Image> imgs_buffer{};
+  auto display_images = [&]() {
+    float image_row = cy;
+    float image_col = content_x;
+    for (auto &img : imgs_buffer) {
+      draw_list->AddImage(ImTextureRef(images[img.fp]), {image_col, image_row},
+                          {image_col + 100, image_row + 100});
+      image_col += 105;
+      if (image_col + 100 >= content_x + content_w) {
+        image_col = content_x;
+        image_row += 105;
+      }
+      if (image_row + 100 >= content_y + content_h) {
+        break;
+      }
+    }
+    cy = image_row + 105;
+    imgs_buffer.clear();
+  };
 
-  for (auto &token : format) {
+  for (size_t i = 0; i < format.size(); ++i) {
+    Token &token = format[i];
     if (row >= row_start && cx == content_x) {
       draw_linenumber(row, token);
     }
@@ -509,10 +529,13 @@ void Editor::render() {
         ++idx;
         continue;
       }
+      cy += current_size;
+      if (imgs_buffer.size() > 0) {
+        display_images();
+      }
       if (idx == cursor) {
         draw_cursor(cx, cy, current_size);
       }
-      cy += current_size;
       if (cy >= content_y + content_h - current_size)
         break;
       if (do_cursor_choose) {
@@ -528,7 +551,6 @@ void Editor::render() {
       ++idx;
       ++row;
       current_size = font_size;
-      last_was_newline = true;
       continue;
     }
 
@@ -544,10 +566,10 @@ void Editor::render() {
 
       float block_start = cy;
 
-      if (last_was_newline && fmt.format & Format_List) {
+      if ((i == 0 || std::holds_alternative<NewLine>(format[i - 1])) &&
+          fmt.format & Format_List) {
         cx += 15;
       }
-      last_was_newline = false;
 
       std::string text = fmt.value;
       size_t pos = 0;
@@ -636,6 +658,14 @@ void Editor::render() {
 
       continue;
     }
+
+    if (std::holds_alternative<Image>(token)) {
+      if (row < row_start) {
+        continue;
+      }
+      imgs_buffer.emplace_back(std::get<Image>(token));
+      continue;
+    }
   }
 
   if (format.size() > 0 && std::holds_alternative<NewLine>(format.back())) {
@@ -687,6 +717,29 @@ void Editor::reparse() {
   Parser parser{text};
   parser.parse_all();
   format = std::move(parser.tokens);
+  update_imgs();
+}
+
+void Editor::update_imgs() {
+  for (auto &token : format) {
+    if (std::holds_alternative<Image>(token)) {
+      Image img = std::get<Image>(token);
+      if (std::filesystem::exists(img.fp) &&
+          std::filesystem::is_regular_file(img.fp)) {
+        SDL_Surface *surf = IMG_Load(img.fp.string().c_str());
+        if (!surf)
+          continue;
+        SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
+        SDL_DestroySurface(surf);
+        if (!tex)
+          continue;
+        if (images.contains(img.fp)) {
+          SDL_DestroyTexture(reinterpret_cast<SDL_Texture *>(images[img.fp]));
+        }
+        images[img.fp] = reinterpret_cast<ImTextureID>(tex);
+      }
+    }
+  }
 }
 
 void Editor::set_text(std::filesystem::path path, std::string &&text) {
@@ -737,6 +790,8 @@ Token Editor::get_hovered_token() {
       ++idx;
     } else if (std::holds_alternative<FormattedString>(token)) {
       idx += std::get<FormattedString>(token).value.size();
+    } else if (std::holds_alternative<Image>(token)) {
+      // None
     }
     if (idx >= cursor) {
       return token;
@@ -763,19 +818,7 @@ bool Editor::is_save_needed() {
     return true;
   }
 
-  // TODO: Make this a utility function
-  std::ifstream fs(filepath);
-  fs.seekg(0, std::ios::end);
-  size_t sz = fs.tellg();
-  fs.seekg(0, std::ios::beg);
-  std::string contents{};
-  contents.resize(sz);
-  fs.read(contents.data(), sz);
-  // For Windows
-  for (std::string::size_type pos = 0;
-       (pos = contents.find("\r\n", pos)) != std::string::npos; pos += 1) {
-    contents.replace(pos, 2, "\n");
-  }
+  std::string contents{read_file_text(filepath)};
 
   return contents != text;
 }
@@ -785,4 +828,10 @@ void Editor::update_title() {
   std::string fp{filepath.empty() ? "(No file)" : filepath.string()};
   std::string title{save + "Take Notes - " + fp};
   SDL_SetWindowTitle(window, title.c_str());
+}
+
+Editor::~Editor() {
+  for (auto &pair : images) {
+    SDL_DestroyTexture(reinterpret_cast<SDL_Texture *>(pair.second));
+  }
 }

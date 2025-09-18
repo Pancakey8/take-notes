@@ -1,4 +1,5 @@
 #pragma once
+#include <filesystem>
 #include <string>
 #include <variant>
 #include <vector>
@@ -20,9 +21,13 @@ struct FormattedString {
   std::string value{};
 };
 
+struct Image {
+  std::filesystem::path fp{};
+};
+
 struct NewLine {};
 
-using Token = std::variant<NewLine, FormattedString>;
+using Token = std::variant<NewLine, FormattedString, Image>;
 
 class Parser {
   std::string input;
@@ -48,6 +53,7 @@ public:
   std::vector<Token> parse_strike();
   std::vector<Token> parse_head(std::string which, Format head_n);
   std::vector<Token> parse_list();
+  std::vector<Token> parse_image();
   std::vector<Token> parse_line_begin();
   std::vector<Token> parse_code();
   std::vector<Token> parse_plain();
