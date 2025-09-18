@@ -48,8 +48,18 @@ int main(int, char *argv[]) {
   Editor editor{window, renderer, plain_font, bold_font};
   editor.font_size = font_size;
   FileExplorer explorer{std::filesystem::current_path()};
-  explorer.on_open(
-      [&editor](auto fp, auto file) { editor.set_text(fp, std::move(file)); });
+  std::string switch_contents;
+  std::filesystem::path switch_fp;
+  bool request_switch{false};
+  explorer.on_open([&](auto fp, auto file) {
+    if (!editor.is_save_needed()) {
+      editor.set_text(fp, std::move(file));
+    } else {
+      switch_contents = std::move(file);
+      switch_fp = fp;
+      request_switch = true;
+    }
+  });
 
   bool is_resizing{false};
 
@@ -112,11 +122,30 @@ int main(int, char *argv[]) {
     if (ImGui::BeginPopupModal("Notice", NULL,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
       ImGui::TextWrapped("%s", "You haven't saved your file yet. Quit?");
-      if (ImGui::Button("Yes", ImVec2(80, 0))) {
+      if (ImGui::Button("Quit", ImVec2(80, 0))) {
         is_running = false;
         ImGui::CloseCurrentPopup();
       }
-      if (ImGui::Button("No", ImVec2(80, 0))) {
+      if (ImGui::Button("Stay", ImVec2(80, 0))) {
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
+    }
+
+    if (request_switch) {
+      request_switch = false;
+      ImGui::OpenPopup("Notice##Switch");
+    }
+
+    if (ImGui::BeginPopupModal("Notice##Switch", NULL,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextWrapped("%s",
+                         "You haven't saved your file yet. Switch files?");
+      if (ImGui::Button("Switch", ImVec2(80, 0))) {
+        editor.set_text(switch_fp, std::move(switch_contents));
+        ImGui::CloseCurrentPopup();
+      }
+      if (ImGui::Button("Stay", ImVec2(80, 0))) {
         ImGui::CloseCurrentPopup();
       }
       ImGui::EndPopup();

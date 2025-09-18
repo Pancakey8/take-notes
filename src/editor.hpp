@@ -51,10 +51,12 @@ public:
     save_explorer.y = 100;
     save_explorer.w = 300;
     save_explorer.h = 300;
+    update_title();
   }
   void event(const SDL_Event &event);
   void render();
   void set_text(std::filesystem::path path, std::string &&text);
+  void update_title();
   bool is_save_needed();
 
   ImVec4 get_bg_rect();

@@ -64,6 +64,12 @@ void FileExplorer::render() {
         std::string contents{};
         contents.resize(len);
         file.read(contents.data(), len);
+        // For Windows
+        for (std::string::size_type pos = 0;
+             (pos = contents.find("\r\n", pos)) != std::string::npos;
+             pos += 1) {
+          contents.replace(pos, 2, "\n");
+        }
         open_evt(fp, std::move(contents));
       }
       if (std::filesystem::is_directory(fp)) {

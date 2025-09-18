@@ -1,5 +1,6 @@
 #include "editor.hpp"
 #include "file_exp.hpp"
+#include "utility.hpp"
 #include <algorithm>
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <fstream>
@@ -9,35 +10,6 @@
 #include <vector>
 
 float apply_head(float fsize, int head_n);
-
-// TODO: Swap for proper utf8
-size_t utf8_next_len(const std::string &s, size_t pos) {
-  if (pos >= s.size())
-    return 0;
-  unsigned char c = (unsigned char)s[pos];
-  if ((c & 0x80) == 0)
-    return 1;
-  if ((c & 0xE0) == 0xC0)
-    return 2;
-  if ((c & 0xF0) == 0xE0)
-    return 3;
-  if ((c & 0xF8) == 0xF0)
-    return 4;
-  return 1;
-}
-
-size_t utf8_prev_len(const std::string &s, size_t pos) {
-  if (pos == 0)
-    return 0;
-  size_t i = pos;
-  while (i > 0) {
-    --i;
-    unsigned char c = (unsigned char)s[i];
-    if ((c & 0xC0) != 0x80)
-      return pos - i;
-  }
-  return pos;
-}
 
 void Editor::select_erase_exit() {
   if (select_anchor > cursor) {
@@ -91,18 +63,42 @@ void Editor::event(const SDL_Event &event) {
       select_erase_exit();
     }
     std::string inp(event.text.text);
-    text.insert(cursor, inp.data(), inp.size());
     Token hover = get_hovered_token();
     if (!(std::holds_alternative<FormattedString>(hover) &&
           std::get<FormattedString>(hover).format & Format_Code)) {
+      if (cursor > 0) {
+        size_t prev = utf8_prev_len(text, cursor);
+        if (text.substr(cursor - prev, prev) == "\\") {
+          text.insert(cursor, inp.data(), inp.size());
+          cursor += inp.size();
+          reparse();
+          break;
+        }
+      }
       if (inp == "*") {
-        text.insert(cursor, "*", 1);
+        text.insert(cursor, "**");
+        ++cursor;
+        reparse();
+        break;
       } else if (inp == "/") {
-        text.insert(cursor, "/", 1);
+        text.insert(cursor, "//");
+        ++cursor;
+        reparse();
+        break;
       } else if (inp == "~") {
-        text.insert(cursor, "~", 1);
+        text.insert(cursor, "~~");
+        ++cursor;
+        reparse();
+        break;
+      } else if (inp == "-") {
+        std::string dot{"•"};
+        text.insert(cursor, dot);
+        cursor += dot.size();
+        reparse();
+        break;
       }
     }
+    text.insert(cursor, inp.data(), inp.size());
     cursor += inp.size();
     reparse();
   } break;
@@ -140,6 +136,17 @@ void Editor::event(const SDL_Event &event) {
         select_erase_exit();
       }
       text.insert(cursor++, "\n", 1);
+      Token tok{get_hovered_token()};
+      if (std::holds_alternative<FormattedString>(tok)) {
+        FormattedString fmt{std::get<FormattedString>(tok)};
+        if (fmt.format & Format_Code) {
+          text.insert(cursor++, "\t");
+        } else if (fmt.format & Format_List) {
+          std::string dot{"•"};
+          text.insert(cursor, dot);
+          cursor += dot.size();
+        }
+      }
       reparse();
       normalize_cursor();
     } break;
@@ -407,6 +414,8 @@ void Editor::event(const SDL_Event &event) {
   default:
     break;
   }
+
+  update_title();
 }
 
 void Editor::render() {
@@ -487,6 +496,8 @@ void Editor::render() {
   size_t closest_idx{0};
   float closest_len{std::numeric_limits<float>().max()};
 
+  bool last_was_newline{true};
+
   for (auto &token : format) {
     if (row >= row_start && cx == content_x) {
       draw_linenumber(row, token);
@@ -517,6 +528,7 @@ void Editor::render() {
       ++idx;
       ++row;
       current_size = font_size;
+      last_was_newline = true;
       continue;
     }
 
@@ -531,6 +543,11 @@ void Editor::render() {
       current_size = apply_head(font_size, fmt.format);
 
       float block_start = cy;
+
+      if (last_was_newline && fmt.format & Format_List) {
+        cx += 15;
+      }
+      last_was_newline = false;
 
       std::string text = fmt.value;
       size_t pos = 0;
@@ -677,6 +694,7 @@ void Editor::set_text(std::filesystem::path path, std::string &&text) {
   this->text = std::move(text);
   reparse();
   normalize_cursor();
+  update_title();
 }
 
 void Editor::error_msg(std::string err) {
@@ -697,6 +715,7 @@ void Editor::save() {
   fs << text;
   fs.flush();
   fs.close();
+  update_title();
 }
 
 void Editor::normalize_cursor() {
@@ -744,6 +763,7 @@ bool Editor::is_save_needed() {
     return true;
   }
 
+  // TODO: Make this a utility function
   std::ifstream fs(filepath);
   fs.seekg(0, std::ios::end);
   size_t sz = fs.tellg();
@@ -751,6 +771,18 @@ bool Editor::is_save_needed() {
   std::string contents{};
   contents.resize(sz);
   fs.read(contents.data(), sz);
+  // For Windows
+  for (std::string::size_type pos = 0;
+       (pos = contents.find("\r\n", pos)) != std::string::npos; pos += 1) {
+    contents.replace(pos, 2, "\n");
+  }
 
   return contents != text;
+}
+
+void Editor::update_title() {
+  std::string save{is_save_needed() ? "*" : ""};
+  std::string fp{filepath.empty() ? "(No file)" : filepath.string()};
+  std::string title{save + "Take Notes - " + fp};
+  SDL_SetWindowTitle(window, title.c_str());
 }

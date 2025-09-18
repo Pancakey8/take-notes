@@ -1,18 +1,20 @@
 #include "markup.hpp"
+#include "utility.hpp"
 #include <iostream>
 
 bool Parser::is_eof() { return cursor >= input.size(); }
 bool Parser::bump() {
   if (is_eof())
     return false;
-  ++cursor;
+  cursor += utf8_next_len(input, cursor);
   return true;
 }
-char Parser::peek() {
+std::string Parser::peek() {
   if (is_eof())
-    return EOF;
+    return "";
 
-  return input[cursor];
+  size_t next = utf8_next_len(input, cursor);
+  return input.substr(cursor, next);
 }
 bool Parser::match(std::string pat) {
   if (cursor + pat.size() - 1 >= input.size())
@@ -28,8 +30,8 @@ bool Parser::match(std::string pat) {
 bool Parser::is_special() {
   if (is_eof())
     return true;
-  char c = peek();
-  bool spec = c == '*' || c == '\n' || c == '/' || c == '\\';
+  std::string c = peek();
+  bool spec = c == "*" || c == "\n" || c == "/" || c == "\\";
   if (cursor + 2 < input.size()) {
     std::string pat2 = input.substr(cursor, 2);
     spec |= pat2 == "~~";
@@ -81,11 +83,10 @@ std::vector<Token> Parser::parse_italic(std::string which) {
   return parse_wrapped(which, Format_Italic);
 }
 
-std::vector<Token> Parser::parse_head(std::string which, Format head_n) {
-  std::vector<Token> total{FormattedString{head_n, which}};
+std::vector<Token> Parser::parse_line_wide(std::string which, Format format) {
+  std::vector<Token> total{FormattedString{format, which}};
   while (!is_eof()) {
-    if (match("\n")) {
-      total.emplace_back(NewLine{});
+    if (peek() == "\n") {
       break;
     }
     std::vector<Token> toks = parse();
@@ -95,19 +96,23 @@ std::vector<Token> Parser::parse_head(std::string which, Format head_n) {
         continue;
       }
       FormattedString fmt = std::get<FormattedString>(tok);
-      fmt.format |= head_n;
+      fmt.format |= format;
       total.emplace_back(fmt);
     }
   }
   return total;
 }
 
+std::vector<Token> Parser::parse_head(std::string which, Format head_n) {
+  return parse_line_wide(which, head_n);
+}
+
 std::vector<Token> Parser::parse_plain() {
   FormattedString str{};
   while (!is_eof() && !is_special()) {
-    char c = peek();
+    std::string c = peek();
     bump();
-    str.value.push_back(c);
+    str.value.append(c);
   }
   return {str};
 }
@@ -123,6 +128,10 @@ std::vector<Token> Parser::parse_code() {
   return toks;
 }
 
+std::vector<Token> Parser::parse_list() {
+  return parse_line_wide("•", Format_List);
+}
+
 std::vector<Token> Parser::parse_line_begin() {
   if (match("###")) {
     return parse_head("###", Format_Head3);
@@ -132,6 +141,8 @@ std::vector<Token> Parser::parse_line_begin() {
     return parse_head("#", Format_Head1);
   } else if (match("\t")) {
     return parse_code();
+  } else if (match("•")) {
+    return parse_list();
   }
   return parse_plain();
 }
@@ -139,12 +150,12 @@ std::vector<Token> Parser::parse_line_begin() {
 std::vector<Token> Parser::parse() {
   if (match("\\")) {
     if (!is_eof() && is_special()) {
-      char c = peek();
+      std::string c = peek();
       bump();
-      if (c == '\n') {
+      if (c == "\n") {
         return {FormattedString{Format_Plain, "\\"}, NewLine{}};
       }
-      return {FormattedString{Format_Plain, "\\" + std::string(1, c)}};
+      return {FormattedString{Format_Plain, "\\" + c}};
     } else {
       return {FormattedString{Format_Plain, "\\"}};
     }
