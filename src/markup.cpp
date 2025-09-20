@@ -1,6 +1,8 @@
 #include "markup.hpp"
 #include "utility.hpp"
+#include <algorithm>
 #include <iostream>
+#include <variant>
 
 bool Parser::is_eof() { return cursor >= input.size(); }
 bool Parser::bump() {
@@ -155,6 +157,30 @@ std::vector<Token> Parser::parse_list() {
   return parse_line_wide("•", Format_List);
 }
 
+std::vector<Token> Parser::parse_table() {
+  std::vector<Token> total{FormattedString{Format_Table, "|"}};
+  size_t start{cursor};
+  std::string now{};
+  bool is_closed{false};
+  while (!is_eof() && peek() != "\n") {
+    if (match("|")) {
+      is_closed = true;
+      total.push_back(FormattedString{Format_Table, now});
+      total.push_back(FormattedString{Format_Table, "|"});
+      now.clear();
+    } else {
+      is_closed = false;
+      now += peek();
+      bump();
+    }
+  }
+  if (!now.empty() || !is_closed) {
+    cursor = start;
+    return {FormattedString{Format_Plain, "|"}};
+  }
+  return total;
+}
+
 std::vector<Token> Parser::parse_line_begin() {
   if (match("###")) {
     return parse_head("###", Format_Head3);
@@ -166,6 +192,8 @@ std::vector<Token> Parser::parse_line_begin() {
     return parse_code();
   } else if (match("•")) {
     return parse_list();
+  } else if (match("|")) {
+    return parse_table();
   }
   return parse_plain();
 }

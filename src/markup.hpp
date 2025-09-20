@@ -14,6 +14,7 @@ enum Format : int {
   Format_Code = 0x20,
   Format_Strike = 0x40,
   Format_List = 0x80,
+  Format_Table = 0x100,
 };
 
 struct FormattedString {
@@ -54,6 +55,7 @@ public:
   std::vector<Token> parse_head(std::string which, Format head_n);
   std::vector<Token> parse_list();
   std::vector<Token> parse_image();
+  std::vector<Token> parse_table();
   std::vector<Token> parse_line_begin();
   std::vector<Token> parse_code();
   std::vector<Token> parse_plain();

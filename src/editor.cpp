@@ -1,16 +1,19 @@
 #include "editor.hpp"
 #include "SDL3/SDL_error.h"
 #include "file_exp.hpp"
+#include "markup.hpp"
 #include "utility.hpp"
 #include <SDL3_image/SDL_image.h>
 #include <algorithm>
 #include <backends/imgui_impl_sdlrenderer3.h>
+#include <cfloat>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <imgui.h>
 #include <iostream>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 float apply_head(float fsize, int head_n);
@@ -527,6 +530,12 @@ void Editor::render() {
   size_t closest_idx{0};
   float closest_len{std::numeric_limits<float>().max()};
 
+  bool in_table{false}, is_mismatched{false};
+  std::vector<size_t> col_lengths{};
+  std::vector<size_t> table_elems{};
+  size_t col_count{};
+  float deferred_gap{0};
+
   std::vector<Image> imgs_buffer{};
   auto display_images = [&]() {
     float image_row = cy;
@@ -591,6 +600,75 @@ void Editor::render() {
         idx += fmt.value.size();
         continue;
       }
+
+      if (fmt.format & Format_Table && !in_table) {
+        in_table = true;
+        is_mismatched = false;
+        col_lengths.clear();
+        table_elems.clear();
+        col_count = 0;
+        size_t idx = i;
+        std::vector<std::vector<std::string>> table;
+        std::vector<std::string> current_row;
+
+        while (idx < format.size()) {
+          if (std::holds_alternative<NewLine>(format[idx])) {
+            if (idx != format.size() - 1) {
+              if (!std::holds_alternative<FormattedString>(format[idx + 1]))
+                break;
+              if (!(std::get<FormattedString>(format[idx + 1]).format &
+                    Format_Table))
+                break;
+            }
+            if (!current_row.empty()) {
+              table.push_back(current_row);
+              current_row.clear();
+            }
+            ++idx;
+            continue;
+          }
+          if (!std::holds_alternative<FormattedString>(format[idx])) {
+            break;
+          }
+          auto fmt = std::get<FormattedString>(format[idx]);
+          if (!(fmt.format & Format_Table))
+            break;
+          if (fmt.value == "|") {
+            ++idx;
+            continue;
+          }
+          current_row.push_back(fmt.value);
+          table_elems.push_back(idx);
+          ++idx;
+        }
+
+        if (!current_row.empty())
+          table.push_back(current_row);
+
+        for (auto &row : table) {
+          if (col_count == 0) {
+            col_count = row.size();
+          } else {
+            if (col_count != row.size()) {
+              is_mismatched = true;
+            }
+          }
+        }
+
+        if (!is_mismatched) {
+          col_lengths.clear();
+          col_lengths.resize(col_count);
+
+          for (size_t c = 0; c < col_count; ++c) {
+            for (auto &row : table) {
+              col_lengths[c] = std::max(col_lengths[c], row[c].size());
+            }
+          }
+        }
+      } else if (!(fmt.format & Format_Table)) {
+        in_table = false;
+      }
+
       ImFont *font = (fmt.format & Format_Bold) ? bold : plain;
 
       current_size = apply_head(font_size, fmt.format);
@@ -604,6 +682,26 @@ void Editor::render() {
 
       std::string text = fmt.value;
       size_t pos = 0;
+
+      float gap_len{0};
+      bool is_gap = (fmt.format & Format_Table && !is_mismatched);
+      if (is_gap) {
+        for (size_t m = 0; m < table_elems.size(); ++m) {
+          size_t elem_idx = table_elems[m];
+          if (i != elem_idx)
+            continue;
+          size_t col = m % col_count;
+          size_t gap = col_lengths[col] - fmt.value.size();
+          std::string fill{};
+          for (size_t i = 0; i < gap; ++i)
+            fill += " ";
+          gap_len =
+              font->CalcTextSizeA(font_size, FLT_MAX, FLT_MAX, fill.c_str()).x;
+        }
+      }
+
+      if (is_gap)
+        cx += gap_len / 2;
 
       while (pos < text.size()) {
         size_t next_space = text.find(' ', pos);
@@ -626,6 +724,12 @@ void Editor::render() {
               IM_COL32(0xFF, 0xFF, 0xFF, 0xFF));
         }
 
+        if (fmt.format & Format_Table &&
+            std::ranges::contains(table_elems, i) && !is_mismatched) {
+          font = bold;
+          fmt.format |= Format_Bold;
+        }
+
         if (cx + word_width > content_x + content_w) {
           cx = content_x;
           cy += current_size;
@@ -643,6 +747,11 @@ void Editor::render() {
                                                       FLT_MAX, sub.c_str())
                                       .x;
             draw_cursor(cursor_x, cy, current_size);
+          }
+
+          if (deferred_gap) {
+            cx += deferred_gap;
+            deferred_gap = 0;
           }
 
           if (do_cursor_choose) {
@@ -681,6 +790,12 @@ void Editor::render() {
         pos = next_space + 1;
       }
 
+      if (cursor != idx && is_gap)
+        cx += gap_len / 2;
+      else if (cursor == idx) {
+        deferred_gap = gap_len / 2;
+      }
+
       if (fmt.format & Format_Code) {
         draw_list->AddRectFilled({content_x, block_start},
                                  {content_x + 2, cy + current_size},
@@ -691,6 +806,7 @@ void Editor::render() {
     }
 
     if (std::holds_alternative<Image>(token)) {
+      in_table = false;
       if (row < row_start) {
         continue;
       }

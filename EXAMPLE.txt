@@ -23,3 +23,10 @@ Code blocks are created with Tab. Each line has to be indented
 Formatting doesn't work within codeblocks. You can escape special characters anytime using \*\*backspaces\*\*.
 
 Images can be embedded with [ok.png]. Images display only if there is a newline. If multiple [ok.png] images are included, they are displayed side-by-side.
+
+Tables are created with bars '|'. They auto align on close. Ensure that you have an equal number of bars on each row.
+
+|Account Number|Name|Balance|
+|1|Pancake|15,000|
+|8|Mike|150,000|
+|50|John|3,500|
