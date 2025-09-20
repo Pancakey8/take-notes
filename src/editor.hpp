@@ -32,6 +32,7 @@ class Editor {
   void error_msg(std::string err);
   void save();
   Token get_hovered_token();
+  std::filesystem::path get_path_proper(std::filesystem::path img_fp);
 
 public:
   float width{0.8f}, height{1.0f}, font_size{18.0f};
@@ -39,6 +40,7 @@ public:
   SDL_Window *window;
   SDL_Renderer *renderer;
   bool is_focused{false};
+  std::filesystem::path example_file{};
   Editor(SDL_Window *window, SDL_Renderer *renderer, ImFont *plain,
          ImFont *bold)
       : plain(plain), bold(bold), window(window), renderer(renderer) {
@@ -60,6 +62,7 @@ public:
   void set_text(std::filesystem::path path, std::string &&text);
   void update_title();
   bool is_save_needed();
+  bool is_example();
 
   ImVec4 get_bg_rect();
 

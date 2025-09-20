@@ -27,11 +27,22 @@ set(FONTS_SRC ${CMAKE_SOURCE_DIR}/src/fonts)
 set(FONTS_OUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/fonts)
 
 add_custom_target(
-    copy_fonts
+    editor_fonts
     ALL
     VERBATIM
     COMMENT "Copying fonts ${FONTS_SRC} -> ${FONTS_OUT}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${FONTS_SRC} ${FONTS_OUT}
+)
+
+set(EXAMPLE_SRC ${CMAKE_SOURCE_DIR}/EXAMPLE.txt ${CMAKE_SOURCE_DIR}/ok.png)
+set(EXAMPLE_OUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/)
+
+add_custom_target(
+    example_doc
+    ALL
+    VERBATIM
+    COMMENT "Copying example ${EXAMPLE_SRC} -> ${EXAMPLE_OUT}"
+    COMMAND ${CMAKE_COMMAND} -E copy ${EXAMPLE_SRC} ${EXAMPLE_OUT}
 )
 
 install(TARGETS notes RUNTIME DESTINATION bin/)

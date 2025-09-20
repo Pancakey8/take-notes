@@ -27,6 +27,13 @@ void FileExplorer::render() {
   ImGui::SetWindowPos({x, y}, ImGuiCond_Once);
   ImGui::SetWindowSize({w, h}, ImGuiCond_Once);
 
+  float footer_h{60.0f};
+  if (!has_example) {
+    footer_h = 0.0f;
+  }
+  ImGui::BeginChild("Contents", ImVec2(0, -footer_h), true,
+                    ImGuiWindowFlags_None);
+
   float avail = ImGui::GetContentRegionAvail().x;
   float item_w = ImGui::CalcTextSize(root.string().c_str()).x +
                  ImGui::CalcTextSize("New File").x +
@@ -75,6 +82,26 @@ void FileExplorer::render() {
       }
       creating_file = false;
     }
+  }
+
+  ImGui::EndChild();
+
+  if (has_example) {
+    ImGui::Separator();
+
+    ImGui::BeginGroup();
+    avail = ImGui::GetContentRegionAvail().x;
+    float button_w = 150.0f, button_h = ImGui::GetFontSize() + 5;
+    float pad = (avail - button_w) * 0.5f;
+    if (pad < 0)
+      pad = 0;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + pad);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (footer_h - button_h) / 2);
+    if (ImGui::Button("See example document.", ImVec2(button_w, 0))) {
+      std::string contents{read_file_text(example_file)};
+      open_evt(example_file, std::move(contents));
+    }
+    ImGui::EndGroup();
   }
 
   ImGui::End();

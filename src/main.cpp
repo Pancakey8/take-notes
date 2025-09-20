@@ -33,8 +33,9 @@ int main(int, char *argv[]) {
   cfg.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_Monochrome |
                         ImGuiFreeTypeBuilderFlags_MonoHinting;
   float font_size{20.0f};
-  std::filesystem::path fonts_dir =
-      std::filesystem::weakly_canonical(argv[0]).parent_path() / "fonts";
+  std::filesystem::path app_dir =
+      std::filesystem::weakly_canonical(argv[0]).parent_path();
+  std::filesystem::path fonts_dir = app_dir / "fonts";
   ImFont *plain_font = io.Fonts->AddFontFromFileTTF(
       (fonts_dir / "NotoSansMono-Medium.ttf").string().c_str(), font_size,
       &cfg);
@@ -60,6 +61,8 @@ int main(int, char *argv[]) {
       request_switch = true;
     }
   });
+  explorer.has_example = true;
+  explorer.example_file = editor.example_file = app_dir / "EXAMPLE.txt";
 
   bool is_resizing{false};
 

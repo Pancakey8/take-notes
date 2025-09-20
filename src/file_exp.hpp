@@ -16,6 +16,8 @@ class FileExplorer {
 
 public:
   bool can_close{false}, is_closed{false};
+  bool has_example{false};
+  std::filesystem::path example_file{};
   float x, y, w, h;
   ImGuiWindowFlags flags{};
   std::string title{"Explorer"};

@@ -1,9 +1,12 @@
 #include "editor.hpp"
+#include "SDL3/SDL_error.h"
 #include "file_exp.hpp"
 #include "utility.hpp"
 #include <SDL3_image/SDL_image.h>
 #include <algorithm>
 #include <backends/imgui_impl_sdlrenderer3.h>
+#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <imgui.h>
 #include <iostream>
@@ -92,9 +95,20 @@ void Editor::event(const SDL_Event &event) {
         reparse();
         break;
       } else if (inp == "-") {
+        if (text.size() != 0 && text[cursor - 1] != '\n') {
+          text.insert(cursor, "-");
+          ++cursor;
+          reparse();
+          break;
+        }
         std::string dot{"•"};
         text.insert(cursor, dot);
         cursor += dot.size();
+        reparse();
+        break;
+      } else if (inp == "[") {
+        text.insert(cursor, "[]");
+        ++cursor;
         reparse();
         break;
       }
@@ -379,6 +393,14 @@ void Editor::event(const SDL_Event &event) {
       break;
 
     case SDLK_HOME: {
+      if (event.key.mod & SDL_KMOD_LSHIFT || event.key.mod & SDL_KMOD_RSHIFT) {
+        if (mode == EditorMode::Insert) {
+          mode = EditorMode::Select;
+          select_anchor = cursor;
+        }
+      } else {
+        mode = EditorMode::Insert;
+      }
       if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
         cursor = 0;
         normalize_cursor();
@@ -395,6 +417,14 @@ void Editor::event(const SDL_Event &event) {
     } break;
 
     case SDLK_END: {
+      if (event.key.mod & SDL_KMOD_LSHIFT || event.key.mod & SDL_KMOD_RSHIFT) {
+        if (mode == EditorMode::Insert) {
+          mode = EditorMode::Select;
+          select_anchor = cursor;
+        }
+      } else {
+        mode = EditorMode::Insert;
+      }
       if (event.key.mod & SDL_KMOD_LCTRL || event.key.mod & SDL_KMOD_RCTRL) {
         cursor = text.size();
         normalize_cursor();
@@ -502,7 +532,8 @@ void Editor::render() {
     float image_row = cy;
     float image_col = content_x;
     for (auto &img : imgs_buffer) {
-      draw_list->AddImage(ImTextureRef(images[img.fp]), {image_col, image_row},
+      draw_list->AddImage(ImTextureRef(images[get_path_proper(img.fp)]),
+                          {image_col, image_row},
                           {image_col + 100, image_row + 100});
       image_col += 105;
       if (image_col + 100 >= content_x + content_w) {
@@ -529,12 +560,12 @@ void Editor::render() {
         ++idx;
         continue;
       }
+      if (idx == cursor) {
+        draw_cursor(cx, cy, current_size);
+      }
       cy += current_size;
       if (imgs_buffer.size() > 0) {
         display_images();
-      }
-      if (idx == cursor) {
-        draw_cursor(cx, cy, current_size);
       }
       if (cy >= content_y + content_h - current_size)
         break;
@@ -724,22 +755,36 @@ void Editor::update_imgs() {
   for (auto &token : format) {
     if (std::holds_alternative<Image>(token)) {
       Image img = std::get<Image>(token);
-      if (std::filesystem::exists(img.fp) &&
-          std::filesystem::is_regular_file(img.fp)) {
-        SDL_Surface *surf = IMG_Load(img.fp.string().c_str());
-        if (!surf)
-          continue;
-        SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
-        SDL_DestroySurface(surf);
-        if (!tex)
-          continue;
-        if (images.contains(img.fp)) {
-          SDL_DestroyTexture(reinterpret_cast<SDL_Texture *>(images[img.fp]));
-        }
-        images[img.fp] = reinterpret_cast<ImTextureID>(tex);
+      std::filesystem::path img_fp = get_path_proper(img.fp);
+      SDL_Surface *surf = IMG_Load(img_fp.string().c_str());
+      if (!surf) {
+        SDL_Log("IMG_Load failed for '%s': %s", img_fp.string().c_str(),
+                SDL_GetError());
+        return;
       }
+      SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
+      SDL_DestroySurface(surf);
+      if (!tex)
+        return;
+      if (images.contains(img_fp)) {
+        SDL_DestroyTexture(reinterpret_cast<SDL_Texture *>(images[img_fp]));
+      }
+      images[img_fp] = reinterpret_cast<ImTextureID>(tex);
+    };
+  }
+}
+
+std::filesystem::path Editor::get_path_proper(std::filesystem::path img_fp) {
+  if (std::filesystem::exists(img_fp) &&
+      std::filesystem::is_regular_file(img_fp)) {
+    return img_fp;
+  } else {
+    std::filesystem::path fp = filepath.parent_path() / img_fp;
+    if (std::filesystem::exists(fp) && std::filesystem::is_regular_file(fp)) {
+      return fp;
     }
   }
+  return {};
 }
 
 void Editor::set_text(std::filesystem::path path, std::string &&text) {
@@ -756,6 +801,8 @@ void Editor::error_msg(std::string err) {
 }
 
 void Editor::save() {
+  if (is_example())
+    return;
   std::ofstream fs(filepath);
   if (!fs.is_open()) {
     if (filepath.empty()) {
@@ -814,6 +861,8 @@ float apply_head(float fsize, int head_n) {
 }
 
 bool Editor::is_save_needed() {
+  if (is_example())
+    return false;
   if (filepath.empty()) {
     return true;
   }
@@ -835,3 +884,5 @@ Editor::~Editor() {
     SDL_DestroyTexture(reinterpret_cast<SDL_Texture *>(pair.second));
   }
 }
+
+bool Editor::is_example() { return filepath == example_file; }
